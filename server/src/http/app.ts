@@ -7,6 +7,7 @@ import type { PipelineCore } from '../pipeline/ingest';
 import { errorHandler, notFound } from './errors';
 import { authRouter } from './routes/auth';
 import { ingestRouter } from './routes/ingest';
+import { topologyRouter } from './routes/topology';
 
 export function createApp(pipeline: PipelineCore): express.Express {
   const app = express();
@@ -26,6 +27,7 @@ export function createApp(pipeline: PipelineCore): express.Express {
     res.json({ ok: true, ts: Date.now(), services: SERVICES.length, nodes: buildFleet().length });
   });
   api.use('/auth', authRouter);
+  api.use('/topology', topologyRouter(pipeline.registry));
 
   app.use('/api/v1', api);
   app.use(notFound);
