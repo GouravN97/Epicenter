@@ -73,6 +73,8 @@ export interface ServiceEffect {
 }
 export interface NodeEffect {
   cpuAdd?: number;
+  /** cpu never drops below this (a runaway process pins the CPU). */
+  cpuFloor?: number;
   /** mem % added per second while active (memory leak). */
   memRate?: number;
   /** Node stops emitting. */
@@ -131,6 +133,8 @@ interface NodeState {
   weight: number;
   cpuNoise: number;
   memBase: number;
+  /** memBase at boot; a restart returns to it. */
+  memBase0: number;
   mem: number;
   disk: number;
   last: MetricValues;
@@ -162,6 +166,7 @@ export class World {
         weight: 0.9 + this.rand() * 0.2,
         cpuNoise: 0,
         memBase,
+        memBase0: memBase,
         mem: memBase,
         disk: 20 + this.rand() * 45,
         last: { cpu: 0, mem: memBase, disk: 0, netIn: 0, netOut: 0, lat: 0, err: 0, rps: 0 },
@@ -176,6 +181,15 @@ export class World {
     this.cpuK = Object.fromEntries(
       SERVICES.map((s) => [s.id, (PARAMS[s.id].nominalCpu - CPU_IDLE) / (nominal[s.id] / s.nodeCount)]),
     ) as Record<ServiceId, number>;
+  }
+
+  /** A process restart: memory returns to its boot level (used when a memory leak is "fixed"). */
+  resetNode(nodeId: string): void {
+    const n = this.nodes.find((x) => x.def.nodeId === nodeId);
+    if (!n) return;
+    n.memBase = n.memBase0;
+    n.mem = n.memBase0;
+    n.cpuNoise = 0;
   }
 
   /** Advances the model by dtSec and returns one sample per live node. */
@@ -194,7 +208,9 @@ export class World {
 
       // Ornstein–Uhlenbeck noise keeps cpu wandering without drifting away.
       n.cpuNoise += -0.3 * n.cpuNoise * dtSec + 2.5 * Math.sqrt(dtSec) * noise();
-      const cpu = clampPct(CPU_IDLE + this.cpuK[svc.id] * rps + n.cpuNoise + (se.cpuAdd ?? 0) + (ne.cpuAdd ?? 0));
+      const cpu = clampPct(
+        Math.max(ne.cpuFloor ?? 0, CPU_IDLE + this.cpuK[svc.id] * rps + n.cpuNoise + (se.cpuAdd ?? 0) + (ne.cpuAdd ?? 0)),
+      );
 
       n.mem += 0.01 * (n.memBase - n.mem) * dtSec + 0.3 * Math.sqrt(dtSec) * noise() + (ne.memRate ?? 0) * dtSec;
       if (ne.memRate) n.memBase = Math.max(n.memBase, n.mem); // a leak does not heal itself

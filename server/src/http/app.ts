@@ -11,13 +11,16 @@ import { topologyRouter } from './routes/topology';
 import { historyRouter } from './routes/history';
 import { alertsRouter } from './routes/alerts';
 import type { Detector } from '../pipeline/detector';
+import type { ChaosService } from '../chaos/chaosService';
+import { chaosRouter } from './routes/chaos';
 
 export interface AppDeps {
   pipeline: PipelineCore;
   detector: Detector;
+  chaos: ChaosService;
 }
 
-export function createApp({ pipeline, detector }: AppDeps): express.Express {
+export function createApp({ pipeline, detector, chaos }: AppDeps): express.Express {
   const app = express();
   app.disable('x-powered-by');
   // Behind Render's proxy in production: needed so the login rate limit keys on the client IP.
@@ -37,6 +40,7 @@ export function createApp({ pipeline, detector }: AppDeps): express.Express {
   api.use('/auth', authRouter);
   api.use('/topology', topologyRouter(pipeline.registry));
   api.use('/alerts', alertsRouter(detector));
+  api.use('/chaos', chaosRouter(chaos));
   api.use(historyRouter(pipeline.registry));
 
   app.use('/api/v1', api);

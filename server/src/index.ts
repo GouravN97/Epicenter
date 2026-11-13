@@ -11,6 +11,8 @@ import { createRealtime } from './realtime/io';
 import { Types } from 'mongoose';
 import { Detector } from './pipeline/detector';
 import { AlertStore, resolveStaleAlerts } from './pipeline/alertStore';
+import { ChaosService, closeStaleChaosRuns } from './chaos/chaosService';
+import { createControl } from './realtime/control';
 
 // The correlator (A9) is wired in later.
 async function main(): Promise<void> {
@@ -55,8 +57,16 @@ async function main(): Promise<void> {
   pipeline.aggregator.on({ point: (p, correction) => !correction && detector.onPoint(p) });
   const heartbeat = setInterval(() => detector.checkHeartbeats(Date.now(), pipeline.state.nodes.values()), 1000);
 
-  const server = http.createServer(createApp({ pipeline, detector }));
+  // The HTTP server comes first: Socket.IO attaches to it, chaos needs /control, and the app needs chaos.
+  const server = http.createServer();
   const rt = createRealtime(server, pipeline);
+  const control = createControl(rt.io, config.simKey);
+  const chaos = new ChaosService(control, pipeline.registry);
+  const staleRuns = await closeStaleChaosRuns();
+  if (staleRuns) console.log(`[server] closed ${staleRuns} chaos runs left open by a previous run`);
+  chaos.onUpdate((active) => rt.emitChaos(active));
+  rt.setChaosSnapshot(() => chaos.snapshot());
+  server.on('request', createApp({ pipeline, detector, chaos }));
   const alerts = new AlertStore((ev, a) => rt.emitAlert(ev, a));
   alerts.attach(detector);
   rt.broadcaster.alertStatus = (id) => detector.nodeStatus(id);
@@ -89,6 +99,7 @@ async function main(): Promise<void> {
     pipeline.stop();
     stopNodeSync();
     clearInterval(heartbeat);
+    void chaos.stopAll();
     void rt.close();
     // Write what is buffered before the database connection goes away.
     server.close(() =>

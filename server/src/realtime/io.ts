@@ -8,6 +8,7 @@ import {
   room,
   type AlertDTO,
   type AuthClaims,
+  type ChaosActiveRun,
   type ClientStats,
   type DashC2S,
   type DashS2C,
@@ -32,6 +33,10 @@ export interface Realtime {
   broadcaster: Broadcaster;
   /** Incident → teams lookup for incident:<id> rooms (A9 sets it). */
   setIncidentTeams(fn: (id: string) => Team[] | undefined): void;
+  /** Broadcasts the active chaos runs to the meta room. */
+  emitChaos(active: ChaosActiveRun[]): void;
+  /** Current active chaos runs, sent to each socket right after it joins meta. */
+  setChaosSnapshot(fn: () => ChaosActiveRun[]): void;
   /** Sends an alert event to the alerts:<team> room of the alert's team. */
   emitAlert(event: 'alert:new' | 'alert:upd', a: AlertDTO): void;
   /** Dashboard sockets and their latest client:stats. */
@@ -48,13 +53,14 @@ export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: 
     maxHttpBufferSize: 16 * 1024, // clients only send small control messages
   });
   // Nothing lives on the default namespace.
-  io.of('/').use((_s, next) => next(new Error('use the /dash namespace')));
+  io.of('/').use((_s, next) => next(new Error('use the /dash or /control namespace')));
 
   const dash = io.of(NS_DASH);
   const broadcaster = new Broadcaster(dash, pipeline);
   if (stats) broadcaster.stats = stats;
 
   let incidentTeams: (id: string) => Team[] | undefined = () => undefined;
+  let chaosSnapshot: () => ChaosActiveRun[] = () => [];
   const ctx: RoomContext = {
     nodeTeam: (id) => pipeline.registry.get(id)?.team,
     incidentTeams: (id) => incidentTeams(id),
@@ -90,6 +96,7 @@ export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: 
       for (const r of fresh) {
         const p = parseRoom(r);
         if (p?.kind === 'fleet') socket.emit('fleet:delta', broadcaster.fleetSnapshot(p.arg as Team));
+        if (p?.kind === 'meta') socket.emit('chaos:upd', { active: chaosSnapshot() });
       }
     });
 
@@ -120,6 +127,12 @@ export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: 
     broadcaster,
     setIncidentTeams(fn) {
       incidentTeams = fn;
+    },
+    emitChaos(active) {
+      dash.to(room.meta).emit('chaos:upd', { active });
+    },
+    setChaosSnapshot(fn) {
+      chaosSnapshot = fn;
     },
     emitAlert(event, a) {
       dash.to(room.alerts(a.team)).emit(event, a);
