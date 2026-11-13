@@ -75,6 +75,26 @@ function wire(s: DashSocket): void {
   s.connect();
 }
 
+/**
+ * Demo and test helper: `epicenter.drop(15000)` in the browser console drops the live connection for that
+ * many milliseconds, then reconnects, so the reconnect gap-fill can be shown. (DevTools' "Offline" switch
+ * does not reliably close an open WebSocket.) Works in real and mock mode.
+ */
+function dropConnection(ms = 15_000): string {
+  const s = socket;
+  if (!s) return 'Not connected.';
+  const mock = s as unknown as { drop?: (ms: number) => void };
+  if (USE_MOCK && mock.drop) mock.drop(ms);
+  else {
+    s.disconnect();
+    setTimeout(() => {
+      if (socket === s) s.connect();
+    }, ms);
+  }
+  return `Connection dropped; reconnecting in ${Math.round(ms / 1000)} s.`;
+}
+if (typeof window !== 'undefined') (window as unknown as { epicenter?: unknown }).epicenter = { drop: dropConnection };
+
 export function disconnectSocket(): void {
   const s = socket;
   if (!s) return;

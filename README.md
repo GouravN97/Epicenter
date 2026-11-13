@@ -249,9 +249,9 @@ npm run typecheck    # TypeScript across all packages
 
 **Things to try** (with `npm run dev` and `npm run sim` running, or in mock mode):
 
-1. **Live and historical together.** Open a node, choose 5 m, then disconnect: in DevTools set the network to
-   *Offline* for 20 s, or in mock mode run `__epicenterMock.drop(20000)` in the console. When the connection
-   returns the chart heals with no gap and no doubled points.
+1. **Live and historical together.** Open a node, choose 5 m, then run `epicenter.drop(20000)` in the browser
+   console to drop the live connection for 20 s. When it returns the chart heals with no gap and no doubled
+   points.
 2. **Two browsers, two scopes.** Sign in as admin in one browser and as the payments viewer in another. The
    viewer's socket only joins `fleet:payments` and `alerts:payments`, and requests for other teams' history
    are refused with 403.
