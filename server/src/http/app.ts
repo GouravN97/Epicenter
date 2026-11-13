@@ -13,14 +13,20 @@ import { alertsRouter } from './routes/alerts';
 import type { Detector } from '../pipeline/detector';
 import type { ChaosService } from '../chaos/chaosService';
 import { chaosRouter } from './routes/chaos';
+import type { IncidentService } from '../incidents/incidentService';
+import { incidentsRouter } from './routes/incidents';
+import type { TimelineEntry } from '@epicenter/shared';
 
 export interface AppDeps {
   pipeline: PipelineCore;
   detector: Detector;
   chaos: ChaosService;
+  incidents: IncidentService;
+  /** Broadcasts a new timeline note to the incident room. */
+  onNote: (incidentId: string, entry: TimelineEntry) => void;
 }
 
-export function createApp({ pipeline, detector, chaos }: AppDeps): express.Express {
+export function createApp({ pipeline, detector, chaos, incidents, onNote }: AppDeps): express.Express {
   const app = express();
   app.disable('x-powered-by');
   // Behind Render's proxy in production: needed so the login rate limit keys on the client IP.
@@ -41,6 +47,7 @@ export function createApp({ pipeline, detector, chaos }: AppDeps): express.Expre
   api.use('/topology', topologyRouter(pipeline.registry));
   api.use('/alerts', alertsRouter(detector));
   api.use('/chaos', chaosRouter(chaos));
+  api.use('/incidents', incidentsRouter(incidents, onNote));
   api.use(historyRouter(pipeline.registry));
 
   app.use('/api/v1', api);

@@ -15,6 +15,9 @@ import { HttpError } from '../http/errors';
 import type { NodeRegistry } from '../pipeline/nodeRegistry';
 import type { Control } from '../realtime/control';
 
+/** How long started runs stay eligible for incident linking (covers CHAOS_LINK_WINDOW_MS with margin). */
+const RECENT_RUNS_MS = 10 * 60_000;
+
 /** Node scenarios without an explicit target hit the first node of this service. */
 const DEFAULT_NODE_SERVICE: Partial<Record<ChaosScenarioId, ServiceId>> = {
   'cpu-spike': 'catalog-api',
@@ -72,6 +75,7 @@ export interface ChaosRunDTO {
 export class ChaosService {
   private readonly active = new Map<string, ActiveRun>();
   private readonly updFns: ((active: ChaosActiveRun[]) => void)[] = [];
+  private readonly started: { runId: string; scenario: ChaosScenarioId; service: ServiceId | null; startedAt: number }[] = [];
 
   constructor(
     private readonly control: Control,
@@ -91,9 +95,11 @@ export class ChaosService {
     return [...this.active.values()].map(({ cmd }) => ({ runId: cmd.runId, scenario: cmd.scenario, target: cmd.target, endsAt: cmd.endsAt }));
   }
 
-  /** Active runs with the service each one targets (the correlator links incidents to these, A9). */
-  activeRuns(): { runId: string; scenario: ChaosScenarioId; service: ServiceId | null; startedAt: number }[] {
-    return [...this.active.values()].map((r) => ({ runId: r.cmd.runId, scenario: r.cmd.scenario, service: r.service, startedAt: r.startedAt }));
+  /** Runs started recently (active or ended) with their target service, for the correlator's scorecard. */
+  recentRuns(): { runId: string; scenario: ChaosScenarioId; service: ServiceId | null; startedAt: number }[] {
+    const cutoff = Date.now() - RECENT_RUNS_MS;
+    while (this.started.length && this.started[0]!.startedAt < cutoff) this.started.shift();
+    return [...this.started];
   }
 
   async start(body: ChaosStartBody, userId: string): Promise<ChaosRunDTO> {
@@ -123,6 +129,7 @@ export class ChaosService {
     const timer = setTimeout(() => void this.end(cmd.runId), durationSec * 1000);
     timer.unref();
     this.active.set(cmd.runId, { cmd, service, startedAt, timer });
+    this.started.push({ runId: cmd.runId, scenario: cmd.scenario, service, startedAt });
     this.control.start(cmd);
     this.emitUpd();
     console.log(`[chaos] start ${cmd.scenario}${target ? ` → ${target}` : ''} for ${durationSec}s (run ${cmd.runId})`);

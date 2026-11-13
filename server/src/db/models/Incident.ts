@@ -7,6 +7,8 @@ const timelineSchema = new Schema(
     kind: { type: String, enum: ['alert', 'resolve', 'note', 'epicenter', 'chaos', 'system'], required: true },
     text: { type: String, required: true },
     userId: { type: Types.ObjectId, ref: 'User', default: null },
+    /** Denormalized so the timeline renders without a user lookup. */
+    userName: { type: String, default: null },
   },
   { _id: false },
 );
@@ -22,8 +24,12 @@ const incidentSchema = new Schema(
     confidence: { type: Number, default: 0 },
     affected: { type: [String], default: [] },
     blastRadius: { type: [String], default: [] },
+    /** Teams owning affected or blast-radius services: who may see this incident. */
+    teams: { type: [String], default: [] },
     alertIds: { type: [{ type: Types.ObjectId, ref: 'Alert' }], default: [] },
     chaosRunId: { type: Types.ObjectId, ref: 'ChaosRun', default: null },
+    /** Set when the correlator merged this incident into another (it is then closed). */
+    mergedInto: { type: Types.ObjectId, ref: 'Incident', default: null },
     timeline: { type: [timelineSchema], default: [] },
   },
   { collection: 'incidents', versionKey: false },

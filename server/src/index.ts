@@ -13,8 +13,9 @@ import { Detector } from './pipeline/detector';
 import { AlertStore, resolveStaleAlerts } from './pipeline/alertStore';
 import { ChaosService, closeStaleChaosRuns } from './chaos/chaosService';
 import { createControl } from './realtime/control';
-
-// The correlator (A9) is wired in later.
+import { Correlator } from './pipeline/correlator';
+import { IncidentStore, closeStaleIncidents } from './pipeline/incidentStore';
+import { IncidentService } from './incidents/incidentService';
 async function main(): Promise<void> {
   requireEnv('MONGODB_URI', 'JWT_SECRET');
   await connectDb();
@@ -66,9 +67,31 @@ async function main(): Promise<void> {
   if (staleRuns) console.log(`[server] closed ${staleRuns} chaos runs left open by a previous run`);
   chaos.onUpdate((active) => rt.emitChaos(active));
   rt.setChaosSnapshot(() => chaos.snapshot());
-  server.on('request', createApp({ pipeline, detector, chaos }));
+
+  // Correlation (§8.7). Subscribed to the detector before the alert store, so an alert already carries its
+  // incidentId when alert:new goes out.
+  const correlator = new Correlator(() => new Types.ObjectId().toHexString(), () => chaos.recentRuns());
+  detector.on({
+    fire: (a) => correlator.onAlertFired(a, Date.now()),
+    resolve: (a) => correlator.onAlertResolved(a, Date.now()),
+  });
   const alerts = new AlertStore((ev, a) => rt.emitAlert(ev, a));
   alerts.attach(detector);
+  const staleIncidents = await closeStaleIncidents();
+  if (staleIncidents) console.log(`[server] closed ${staleIncidents} incidents left open by a previous run`);
+  const incidentStore = new IncidentStore({ incident: (ev, dto, teams) => rt.emitIncident(ev, dto, teams) }, alerts, (id) => detector.getActive(id));
+  incidentStore.attach(correlator);
+  const incidents = new IncidentService(correlator, detector, incidentStore);
+  rt.setIncidentTeams((id) => incidents.teamsOf(id));
+  const correlatorTick = setInterval(() => correlator.tick(Date.now()), 1000);
+  if (process.env.DEBUG_PIPELINE) {
+    correlator.on({
+      open: (i) => console.log(`[incident] OPEN ${i.id}: ${i.title}`),
+      update: (i) => console.log(`[incident] ${i.state === 'resolved' ? 'RESOLVED' : 'upd'} ${i.id}: ${i.title} (conf ${i.confidence})${i.mergedInto ? ` merged → ${i.mergedInto}` : ''}`),
+    });
+  }
+
+  server.on('request', createApp({ pipeline, detector, chaos, incidents, onNote: (id, e) => rt.emitNote(id, e) }));
   rt.broadcaster.alertStatus = (id) => detector.nodeStatus(id);
   if (process.env.DEBUG_PIPELINE) {
     detector.on({
@@ -99,11 +122,12 @@ async function main(): Promise<void> {
     pipeline.stop();
     stopNodeSync();
     clearInterval(heartbeat);
+    clearInterval(correlatorTick);
     void chaos.stopAll();
     void rt.close();
     // Write what is buffered before the database connection goes away.
     server.close(() =>
-      void Promise.all([writer.stop(), alerts.drain()]).finally(() => disconnectDb().finally(() => process.exit(0))),
+      void Promise.all([writer.stop(), alerts.drain(), incidentStore.drain()]).finally(() => disconnectDb().finally(() => process.exit(0))),
     );
     setTimeout(() => process.exit(0), 4000).unref();
   };
