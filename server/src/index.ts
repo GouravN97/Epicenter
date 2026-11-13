@@ -8,8 +8,11 @@ import { createApp } from './http/app';
 import { createPipeline } from './pipeline';
 import { snapshotStats } from './pipeline/pipelineStats';
 import { createRealtime } from './realtime/io';
+import { Types } from 'mongoose';
+import { Detector } from './pipeline/detector';
+import { AlertStore, resolveStaleAlerts } from './pipeline/alertStore';
 
-// The detector (A7) and correlator (A9) are wired in later tasks.
+// The correlator (A9) is wired in later.
 async function main(): Promise<void> {
   requireEnv('MONGODB_URI', 'JWT_SECRET');
   await connectDb();
@@ -42,8 +45,27 @@ async function main(): Promise<void> {
     }, 5_000).unref();
   }
 
-  const server = http.createServer(createApp(pipeline));
+  // Detection (§8.6): every finalized point (corrections do not re-run it) plus a 1 s heartbeat sweep.
+  const detector = new Detector(
+    (id) => pipeline.registry.get(id),
+    () => new Types.ObjectId().toHexString(),
+  );
+  const closed = await resolveStaleAlerts();
+  if (closed) console.log(`[server] closed ${closed} alerts left open by a previous run`);
+  pipeline.aggregator.on({ point: (p, correction) => !correction && detector.onPoint(p) });
+  const heartbeat = setInterval(() => detector.checkHeartbeats(Date.now(), pipeline.state.nodes.values()), 1000);
+
+  const server = http.createServer(createApp({ pipeline, detector }));
   const rt = createRealtime(server, pipeline);
+  const alerts = new AlertStore((ev, a) => rt.emitAlert(ev, a));
+  alerts.attach(detector);
+  rt.broadcaster.alertStatus = (id) => detector.nodeStatus(id);
+  if (process.env.DEBUG_PIPELINE) {
+    detector.on({
+      fire: (a) => console.log(`[alert] FIRE ${a.severity} ${a.rule} ${a.nodeId}: ${a.message}`),
+      resolve: (a) => console.log(`[alert] RESOLVED ${a.rule} ${a.nodeId} ${a.metric}`),
+    });
+  }
   rt.broadcaster.stats = () => {
     const d = rt.dashStats();
     return snapshotStats({
@@ -66,9 +88,12 @@ async function main(): Promise<void> {
     console.log(`[server] ${sig} received, shutting down`);
     pipeline.stop();
     stopNodeSync();
+    clearInterval(heartbeat);
     void rt.close();
     // Write what is buffered before the database connection goes away.
-    server.close(() => void writer.stop().finally(() => disconnectDb().finally(() => process.exit(0))));
+    server.close(() =>
+      void Promise.all([writer.stop(), alerts.drain()]).finally(() => disconnectDb().finally(() => process.exit(0))),
+    );
     setTimeout(() => process.exit(0), 4000).unref();
   };
   process.on('SIGINT', () => shutdown('SIGINT'));

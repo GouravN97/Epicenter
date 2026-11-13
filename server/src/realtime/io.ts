@@ -5,6 +5,8 @@ import {
   NS_DASH,
   SOCKET_MAX_ROOMS,
   parseRoom,
+  room,
+  type AlertDTO,
   type AuthClaims,
   type ClientStats,
   type DashC2S,
@@ -30,6 +32,8 @@ export interface Realtime {
   broadcaster: Broadcaster;
   /** Incident → teams lookup for incident:<id> rooms (A9 sets it). */
   setIncidentTeams(fn: (id: string) => Team[] | undefined): void;
+  /** Sends an alert event to the alerts:<team> room of the alert's team. */
+  emitAlert(event: 'alert:new' | 'alert:upd', a: AlertDTO): void;
   /** Dashboard sockets and their latest client:stats. */
   dashStats(): { sockets: number; rooms: number; clientE2eP95: number[] };
   close(): Promise<void>;
@@ -116,6 +120,9 @@ export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: 
     broadcaster,
     setIncidentTeams(fn) {
       incidentTeams = fn;
+    },
+    emitAlert(event, a) {
+      dash.to(room.alerts(a.team)).emit(event, a);
     },
     dashStats() {
       const sockets = [...dash.sockets.values()] as DashSocket[];

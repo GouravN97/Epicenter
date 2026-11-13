@@ -9,8 +9,15 @@ import { authRouter } from './routes/auth';
 import { ingestRouter } from './routes/ingest';
 import { topologyRouter } from './routes/topology';
 import { historyRouter } from './routes/history';
+import { alertsRouter } from './routes/alerts';
+import type { Detector } from '../pipeline/detector';
 
-export function createApp(pipeline: PipelineCore): express.Express {
+export interface AppDeps {
+  pipeline: PipelineCore;
+  detector: Detector;
+}
+
+export function createApp({ pipeline, detector }: AppDeps): express.Express {
   const app = express();
   app.disable('x-powered-by');
   // Behind Render's proxy in production: needed so the login rate limit keys on the client IP.
@@ -29,6 +36,7 @@ export function createApp(pipeline: PipelineCore): express.Express {
   });
   api.use('/auth', authRouter);
   api.use('/topology', topologyRouter(pipeline.registry));
+  api.use('/alerts', alertsRouter(detector));
   api.use(historyRouter(pipeline.registry));
 
   app.use('/api/v1', api);
