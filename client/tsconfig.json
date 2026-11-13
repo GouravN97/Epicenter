@@ -21,12 +21,7 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true,
-    "paths": {
-      "@epicenter/shared": [
-        "./src/contract/index.ts"
-      ]
-    }
+    "noEmit": true
   },
   "include": [
     "src",
