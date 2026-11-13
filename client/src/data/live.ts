@@ -11,27 +11,49 @@ import {
   type ColumnarSeries,
   type FleetDelta,
   type NodePt,
+  TEAMS,
   type SvcPt,
+  type Team,
+  type TopoTick,
   type TopologyResponse,
+  type UserDTO,
 } from '@epicenter/shared';
 import { api } from '../lib/api';
 import { onSocketChange, type DashSocket } from '../lib/socket';
+import { useAlerts } from '../state/alertStore';
 import { useAuth } from '../state/authStore';
+import { useIncidents } from '../state/incidentStore';
 import { Clock } from './clock';
 import { FleetState } from './fleetState';
+import { Ring } from './ring';
 import { RoomManager, type RoomSocket } from './RoomManager';
 import type { SeriesDeps } from './seriesSession';
 import { TelemetryStore } from './TelemetryStore';
+import { TopoState } from './topoState';
 import { TopologyRegistry } from './topology';
 
 export const store = new TelemetryStore();
 export const rooms = new RoomManager();
 export const topology = new TopologyRegistry();
 export const fleet = new FleetState();
+export const topo = new TopoState();
 export const clock = new Clock();
+/**
+ * Data delay in ms, one sample per fleet:delta: server-clock now − the delta's source second (§9.2).
+ * It includes the ~3 s the aggregator waits for late events, so about 3–4 s is healthy.
+ */
+export const delay = new Ring(60);
 
 /** Draw key for everything that renders from `fleet` (heatmap, stat tiles). */
 export const FLEET_KEY = 'fleet';
+/** Draw key for everything that renders from `topo`. */
+export const TOPO_KEY = 'topology';
+
+/** Teams whose rooms a user may join: admins and SREs see every team (§7.2). */
+export function visibleTeams(user: UserDTO | null): Team[] {
+  if (!user) return [];
+  return user.role === 'viewer' ? user.teams : [...TEAMS];
+}
 
 function historyPath(roomName: string): string {
   const r = parseRoom(roomName);
@@ -75,7 +97,13 @@ function onSvcPt(p: SvcPt): void {
 
 function onFleetDelta(d: FleetDelta): void {
   fleet.apply(d);
+  delay.push(clock.liveNow() - d[0] * 1000);
   store.markDirty(FLEET_KEY);
+}
+
+function onTopoTick(t: TopoTick): void {
+  topo.apply(t);
+  store.markDirty(TOPO_KEY);
 }
 
 /** Three `time` round trips; the clock keeps the one with the shortest round trip. */
@@ -102,11 +130,17 @@ export function initDataLayer(): void {
     socket.on('node:pt', onNodePt);
     socket.on('svc:pt', onSvcPt);
     socket.on('fleet:delta', onFleetDelta);
+    socket.on('topo:tick', onTopoTick);
+    socket.on('alert:new', (a) => useAlerts.getState().apply(a, true));
+    socket.on('alert:upd', (a) => useAlerts.getState().apply(a, true));
+    socket.on('incident:new', (i) => useIncidents.getState().apply(i));
+    socket.on('incident:upd', (i) => useIncidents.getState().apply(i));
     socket.on('connect', () => syncClock(socket));
     if (socket.connected) syncClock(socket);
   });
 
-  // The topology belongs to the session: load it on login, forget it (and the fleet) on logout.
+  // Session-scoped data: loaded on login, forgotten on logout.
+  let releaseAlertRooms: (() => void)[] = [];
   const onAuth = (status: string) => {
     if (status === 'authed') {
       topology
@@ -115,15 +149,35 @@ export function initDataLayer(): void {
         .catch(() => {
           // Left unloaded: pages show their error state and `reloadTopology` retries.
         });
+      // Alerts and incidents are followed on every page (feed, banner, counts), so their rooms are
+      // held for the whole session rather than by one component.
+      if (!releaseAlertRooms.length) {
+        releaseAlertRooms = visibleTeams(useAuth.getState().user).map((t) => rooms.acquire(room.alerts(t)));
+      }
+      void useAlerts.getState().load();
+      void useIncidents.getState().load();
     } else if (status === 'anon') {
+      releaseAlertRooms.splice(0).forEach((release) => release());
       topology.reset();
       fleet.reset();
+      topo.reset();
+      delay.clear();
+      useAlerts.getState().reset();
+      useIncidents.getState().reset();
       store.markDirty(FLEET_KEY);
+      store.markDirty(TOPO_KEY);
     }
   };
   onAuth(useAuth.getState().status);
   useAuth.subscribe((s, prev) => {
     if (s.status !== prev.status) onAuth(s.status);
+  });
+
+  // Lifecycle events missed while disconnected are not replayed by the server: reload after a reconnect.
+  rooms.onConnection((ev) => {
+    if (ev !== 'reconnect') return;
+    void useAlerts.getState().load();
+    void useIncidents.getState().load();
   });
 }
 

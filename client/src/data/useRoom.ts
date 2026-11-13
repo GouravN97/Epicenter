@@ -41,3 +41,12 @@ export function useRoom(room: string | null, ref?: RefObject<Element | null>): {
   );
   return { state, visible };
 }
+
+/** Holds several rooms while mounted, e.g. one fleet room per team. */
+export function useRooms(list: readonly string[]): void {
+  const key = list.join('\n');
+  useEffect(() => {
+    const releases = (key ? key.split('\n') : []).map((r) => rooms.acquire(r));
+    return () => releases.forEach((release) => release());
+  }, [key]);
+}

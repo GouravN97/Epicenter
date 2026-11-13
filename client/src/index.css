@@ -5,8 +5,11 @@
  *  - one neutral surface scale (bg → surface → raised), one line colour
  *  - ONE accent, used only for interactive elements
  *  - status colours are reserved strictly for status so they keep their meaning
+ *
+ * `static` keeps every token in the output even when no utility class uses it: the canvas components read
+ * them with getComputedStyle, which Tailwind cannot see.
  */
-@theme {
+@theme static {
   --color-bg: #0b0e13;
   --color-surface: #11151c;
   --color-raised: #181d27;
@@ -18,6 +21,14 @@
   --color-accent: #6ea8fe;
   --color-accent-strong: #8fbcff;
   --color-accent-soft: #6ea8fe1f;
+
+  /* CPU heat ramp: one hue, five ordinal steps, dark (recedes into the surface) → light (hot).
+     Validated on --color-surface: monotone lightness, visible step gaps, darkest step ≥ 2:1. */
+  --color-heat-1: #184f95;
+  --color-heat-2: #256abf;
+  --color-heat-3: #3987e5;
+  --color-heat-4: #6da7ec;
+  --color-heat-5: #b7d3f6;
 
   --color-ok: #3fb97f;
   --color-warn: #e5a83b;
@@ -59,4 +70,17 @@ body {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* A live alert that just arrived is tinted for a moment, then settles. */
+@keyframes fresh-row {
+  from {
+    background-color: var(--color-accent-soft);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.fresh-row {
+  animation: fresh-row 2.5s ease-out;
 }
