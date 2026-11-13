@@ -58,9 +58,9 @@ const fmtValue = (v: number): string => (Math.abs(v) >= 100 ? compact(v) : Strin
 
 const TIME_STEPS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200].map((s) => s * 1000);
 
-/** Time-axis ticks on round local clock times (…:00, …:30), about one per 90 px. */
+/** Time-axis ticks on round local clock times (…:00, …:30), about one per 75 px. */
 function timeSplits(min: number, max: number, widthPx: number): number[] {
-  const want = Math.max(2, Math.floor(widthPx / 90));
+  const want = Math.max(2, Math.floor(widthPx / 75));
   const step = TIME_STEPS.find((s) => (max - min) / s <= want) ?? TIME_STEPS[TIME_STEPS.length - 1]!;
   const tz = new Date(min).getTimezoneOffset() * 60_000; // align in local time: some zones are offset by 30 or 45 min
   const out: number[] = [];
@@ -138,19 +138,14 @@ export function LiveChart(props: LiveChartProps) {
         },
       ],
       series: [
-        // With the pointer away from the chart the legend shows the newest point, so it is never a row of dashes.
-        { label: 'Time', value: (u, t) => (t == null ? (u.data[0].length ? 'latest' : '–') : clockTime(t)) },
+        { label: 'Time', value: (_u, t) => (t == null ? '–' : clockTime(t)) },
         ...series.map(
           (s): uPlot.Series => ({
             label: s.label,
             stroke: v(s.colorVar),
             width: 2,
             points: { show: false },
-            value: (u, val, sidx) => {
-              const d = u.data[sidx]!;
-              const shown = val ?? (d.length ? d[d.length - 1] : null);
-              return shown == null ? '–' : `${fmtValue(shown)} ${unit}`;
-            },
+            value: (_u, val) => (val == null ? '–' : `${fmtValue(val)} ${unit}`),
             // Break the line where points are missing (a silent node, an unhealed gap) instead of
             // drawing a straight segment that would look like data.
             gaps: (u, _sidx, i0, i1, nullGaps) => {
@@ -215,6 +210,10 @@ export function LiveChart(props: LiveChartProps) {
       const now = clock.now();
       u.setScale('x', { min: now - c.rangeMs, max: now });
       u.redraw(false, true);
+      // With the pointer off the chart (here and on its synced neighbours) the legend reads the newest
+      // point, so it is a live readout rather than a row of dashes.
+      const n = data[0]!.length;
+      if (n && !((u.cursor.left ?? -1) >= 0)) u.setLegend({ idx: n - 1 }, false);
     };
 
     const ro = new ResizeObserver(([entry]) => {
