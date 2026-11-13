@@ -122,3 +122,60 @@ body {
 .uplot .u-cursor-pt {
   border-color: var(--color-surface) !important;
 }
+
+/* Topology map (xyflow), themed with the app tokens. */
+.topology-map .react-flow {
+  --xy-background-color: transparent;
+  --xy-attribution-background-color: transparent;
+}
+.topology-map .react-flow__attribution a {
+  color: var(--color-faint);
+}
+.topology-map .react-flow__node {
+  cursor: pointer;
+}
+
+/* The epicenter: two rings expanding out of the node, offset by half a cycle. */
+@keyframes epicenter-ripple {
+  from {
+    transform: scale(1);
+    opacity: 0.55;
+  }
+  to {
+    transform: scale(1.5, 1.9);
+    opacity: 0;
+  }
+}
+.epicenter-ripple {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--color-crit);
+  border-radius: 0.5rem;
+  animation: epicenter-ripple 2s ease-out infinite;
+  pointer-events: none;
+}
+
+/* Edges the failure spreads along: dashes run from the callee (towards the epicenter) up to the caller. */
+@keyframes spread-edge {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: 24;
+  }
+}
+.spread-edge {
+  stroke-dasharray: 8 4;
+  animation: spread-edge 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .epicenter-ripple {
+    animation: none;
+    transform: scale(1.12, 1.25);
+    opacity: 0.6;
+  }
+  .spread-edge {
+    animation: none;
+  }
+}
