@@ -13,6 +13,7 @@ import {
   round1,
   type MetricValues,
   type RegionId,
+  type ChaosScenarioId,
   type ServiceId,
   type Team,
 } from '@epicenter/shared';
@@ -28,20 +29,33 @@ export interface MockNode {
   az: string;
 }
 
-export type FaultKind = 'slow-db' | 'cpu-spike' | 'cache-outage' | 'node-kill';
+/** Fault kinds are chaos scenario ids. The scheduled faults use four of them; the Chaos Lab injects any. */
+export type FaultKind = ChaosScenarioId;
 
 export interface Fault {
   kind: FaultKind;
-  /** Cycle number; unique per fault occurrence. */
+  /** Scheduled faults: cycle number, unique per occurrence. Injected faults: −1. */
   cycle: number;
+  /** Injected faults: the chaos run id. Scheduled faults: null. */
+  runId: string | null;
   startSec: number;
   endSec: number;
-  /** The service where the fault originates (the expected epicenter). */
-  service: ServiceId;
+  /** The service where the fault originates (the expected epicenter). Null for fleet-wide scenarios. */
+  service: ServiceId | null;
   /** Target node for node-scoped faults, else null. */
   nodeIdx: number | null;
   /** 0–1, ramps up at the start and down at the end. */
   intensity: number;
+}
+
+/** A fault injected from the Chaos Lab. Times are whole seconds; `endSec` is exclusive. */
+export interface InjectedFault {
+  runId: string;
+  kind: FaultKind;
+  startSec: number;
+  endSec: number;
+  service: ServiceId | null;
+  nodeIdx: number | null;
 }
 
 /** One fault per cycle: starts at FAULT_START seconds into the cycle and lasts until FAULT_END. */
@@ -51,6 +65,8 @@ export const FAULT_END = 165;
 const FAULT_RAMP = 8;
 /** Order of faults across cycles; `null` is a quiet cycle. */
 const FAULT_ORDER: (FaultKind | null)[] = ['slow-db', 'cpu-spike', 'cache-outage', 'node-kill', null];
+/** Memory-leak growth, % per second (plan §8.9: +0.25/s). */
+const LEAK_PER_SEC = 0.25;
 
 const TOTAL_SEED_NODES = SERVICES.reduce((n, s) => n + s.nodeCount, 0);
 
@@ -86,8 +102,18 @@ export interface MockWorld {
   nodeById: ReadonlyMap<string, MockNode>;
   /** Number of nodes per service, indexed by svcIdx. */
   nodeCounts: readonly number[];
-  /** The fault active at `tSec`, or null. */
-  faultAt(tSec: number): Fault | null;
+  /**
+   * Faults active at `tSec`. Injected faults take over: while any is active, the scheduled background
+   * fault is paused so the Chaos Lab result is not muddied.
+   */
+  faultsAt(tSec: number): Fault[];
+  /** The scheduled background fault at `tSec`, whether or not an injected one pauses it. */
+  scheduledAt(tSec: number): Fault | null;
+  /** Adds an injected fault. Callers start it after the last second already computed, so history never changes. */
+  inject(f: InjectedFault): void;
+  /** Ends an injected fault at `endSec` (exclusive), if it would otherwise run longer. */
+  endInjected(runId: string, endSec: number): void;
+  injected(): readonly InjectedFault[];
   /**
    * The 1-second point for a node, or null when the node is not reporting (node-kill).
    * `withFault = false` gives the same instant with no fault: the baseline the mock detector compares with.
@@ -125,7 +151,7 @@ export function createMockWorld(totalNodes = TOTAL_SEED_NODES): MockWorld {
   const nodeCounts = SERVICES.map((s) => nodes.filter((n) => n.svcIdx === s.idx).length);
   const firstNodeOf = (id: ServiceId): number => nodes.find((n) => n.serviceId === id)!.idx;
 
-  function faultAt(tSec: number): Fault | null {
+  function scheduledAt(tSec: number): Fault | null {
     const cycle = Math.floor(tSec / FAULT_CYCLE);
     const phase = tSec - cycle * FAULT_CYCLE;
     if (phase < FAULT_START || phase >= FAULT_END) return null;
@@ -134,8 +160,6 @@ export function createMockWorld(totalNodes = TOTAL_SEED_NODES): MockWorld {
 
     const startSec = cycle * FAULT_CYCLE + FAULT_START;
     const endSec = cycle * FAULT_CYCLE + FAULT_END;
-    const ramp = kind === 'node-kill' ? 1 : clamp(Math.min(tSec - startSec + 1, endSec - tSec) / FAULT_RAMP, 0, 1);
-
     let service: ServiceId;
     let nodeIdx: number | null = null;
     if (kind === 'slow-db') service = 'db';
@@ -147,29 +171,47 @@ export function createMockWorld(totalNodes = TOTAL_SEED_NODES): MockWorld {
       const count = nodeCounts[SERVICES.findIndex((s) => s.id === service)]!;
       nodeIdx = firstNodeOf(service) + Math.floor(hash(cycle, 12, 2) * count);
     }
-    return { kind, cycle, startSec, endSec, service, nodeIdx, intensity: ramp };
+    return { kind, cycle, runId: null, startSec, endSec, service, nodeIdx, intensity: ramp(kind, tSec, startSec, endSec) };
+  }
+
+  function ramp(kind: FaultKind, tSec: number, startSec: number, endSec: number): number {
+    if (kind === 'node-kill' || kind === 'memory-leak') return 1;
+    return clamp(Math.min(tSec - startSec + 1, endSec - tSec) / FAULT_RAMP, 0, 1);
+  }
+
+  const injectedList: InjectedFault[] = [];
+
+  function faultsAt(tSec: number): Fault[] {
+    const active = injectedList.filter((f) => tSec >= f.startSec && tSec < f.endSec);
+    if (active.length) {
+      return active.map((f) => ({ ...f, cycle: -1, intensity: ramp(f.kind, tSec, f.startSec, f.endSec) }));
+    }
+    const s = scheduledAt(tSec);
+    return s ? [s] : [];
   }
 
   // Service-level model, cached per (second, fault on/off): every node of a tick shares it.
   const cache = new Map<number, ServiceModel>();
 
-  function serviceModel(tSec: number, fault: Fault | null): ServiceModel {
-    const key = tSec * 2 + (fault ? 1 : 0);
+  function serviceModel(tSec: number, faults: Fault[]): ServiceModel {
+    const key = tSec * 2 + (faults.length ? 1 : 0);
     const hit = cache.get(key);
     if (hit) return hit;
 
     const n = SERVICES.length;
-    // Gateway load: slow daily-style wave plus wander. 0.3–1.0.
+    const on = (kind: FaultKind, svc?: ServiceId) => faults.find((f) => f.kind === kind && (svc === undefined || f.service === svc));
+    const surge = on('traffic-surge')?.intensity ?? 0;
+    // Gateway load: slow daily-style wave plus wander. 0.3–1.0, ×10 at the peak of a traffic surge.
     const load = clamp(0.65 + 0.25 * Math.sin((2 * Math.PI * tSec) / 900) + 0.2 * (smooth(900, tSec, 20, 1) - 0.5), 0.3, 1);
-    const gatewayRps = 600 * load;
+    const gatewayRps = 600 * load * (1 + 9 * surge);
 
     // Requests flow down the dependency edges. SERVICES lists callers before their callees.
     const rps = new Array<number>(n).fill(0);
     rps[0] = gatewayRps;
-    rps[SERVICES.findIndex((s) => s.id === 'worker')]! += 0.3 * gatewayRps; // background jobs
+    rps[SERVICES.findIndex((s) => s.id === 'worker')]! += 0.3 * 600 * load; // background jobs do not surge
     for (const s of SERVICES) for (const d of s.dependsOn) rps[SERVICES.findIndex((x) => x.id === d.service)]! += rps[s.idx]! * d.callFraction;
 
-    const cpu = SERVICES.map((s) => 22 + 40 * load + (fault?.kind === 'slow-db' && s.id === 'db' ? 25 * fault.intensity : 0));
+    const cpu = SERVICES.map((s) => 22 + 40 * load * (1 + 0.9 * surge) + 25 * (on('slow-db', s.id)?.intensity ?? 0));
 
     // Latency and errors propagate up from the dependencies, so walk callees first.
     const lat = new Array<number>(n).fill(0);
@@ -177,9 +219,10 @@ export function createMockWorld(totalNodes = TOTAL_SEED_NODES): MockWorld {
     for (let i = n - 1; i >= 0; i--) {
       const s = SERVICES[i]!;
       let ownLat = s.baseLatMs * (1 + Math.max(0, cpu[i]! - 50) / 40);
-      if (fault?.kind === 'slow-db' && s.id === 'db') ownLat *= 1 + 27 * fault.intensity;
+      // A slowed service: ×28 rather than the plan's ×8, so the mock's simple detector sees the source too.
+      ownLat *= 1 + 27 * (on('slow-db', s.id)?.intensity ?? 0);
       let ownErr = 0.15;
-      if (fault?.kind === 'cache-outage' && s.id === 'cache') ownErr += 60 * fault.intensity;
+      ownErr += 60 * (on('cache-outage', s.id)?.intensity ?? 0);
       let depLat = 0;
       let depErr = 0;
       for (const d of s.dependsOn) {
@@ -200,11 +243,13 @@ export function createMockWorld(totalNodes = TOTAL_SEED_NODES): MockWorld {
   function pointAt(nodeIdx: number, tSec: number, withFault = true): MetricValues | null {
     const node = nodes[nodeIdx];
     if (!node) return null;
-    const fault = withFault ? faultAt(tSec) : null;
-    const onThisNode = fault?.nodeIdx === nodeIdx;
-    if (fault?.kind === 'node-kill' && onThisNode) return null;
+    const faults = withFault ? faultsAt(tSec) : [];
+    const here = (kind: FaultKind) => faults.find((f) => f.kind === kind && f.nodeIdx === nodeIdx);
+    if (here('node-kill')) return null;
+    const spike = here('cpu-spike')?.intensity ?? 0;
+    const leak = here('memory-leak');
 
-    const m = serviceModel(tSec, fault);
+    const m = serviceModel(tSec, faults);
     const s = node.svcIdx;
     const offset = hash(nodeIdx, 7, 1); // stable per-node character
 
@@ -213,8 +258,13 @@ export function createMockWorld(totalNodes = TOTAL_SEED_NODES): MockWorld {
       (offset - 0.5) * 14 +
       (smooth(nodeIdx, tSec, 12, 2) - 0.5) * 10 +
       (hash(nodeIdx, tSec, 3) - 0.5) * 2.4 +
-      (fault?.kind === 'cpu-spike' && onThisNode ? 60 * fault.intensity : 0);
-    const mem = 38 + hash(nodeIdx, 7, 4) * 30 + (smooth(nodeIdx, tSec, 300, 5) - 0.5) * 8 + (hash(nodeIdx, tSec, 6) - 0.5) * 0.6;
+      60 * spike;
+    const mem =
+      38 +
+      hash(nodeIdx, 7, 4) * 30 +
+      (smooth(nodeIdx, tSec, 300, 5) - 0.5) * 8 +
+      (hash(nodeIdx, tSec, 6) - 0.5) * 0.6 +
+      (leak ? LEAK_PER_SEC * (tSec - leak.startSec + 1) : 0);
     const disk = 30 + hash(nodeIdx, 7, 7) * 45 + smooth(nodeIdx, tSec, 1800, 8) * 3;
     const rps = (m.rps[s]! / nodeCounts[s]!) * (0.92 + 0.16 * smooth(nodeIdx, tSec, 15, 9));
     const lat = m.lat[s]! * (0.9 + 0.2 * smooth(nodeIdx, tSec, 9, 10)) + (hash(nodeIdx, tSec, 11) - 0.5) * 0.4;
@@ -234,5 +284,20 @@ export function createMockWorld(totalNodes = TOTAL_SEED_NODES): MockWorld {
     };
   }
 
-  return { nodes, nodeById, nodeCounts, faultAt, pointAt };
+  return {
+    nodes,
+    nodeById,
+    nodeCounts,
+    faultsAt,
+    scheduledAt,
+    pointAt,
+    inject(f) {
+      injectedList.push({ ...f });
+    },
+    endInjected(runId, endSec) {
+      const f = injectedList.find((x) => x.runId === runId);
+      if (f && endSec < f.endSec) f.endSec = Math.max(f.startSec, endSec);
+    },
+    injected: () => injectedList,
+  };
 }

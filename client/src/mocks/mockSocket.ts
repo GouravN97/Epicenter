@@ -11,6 +11,7 @@ import {
   encodeNodePt,
   room,
   type AlertDTO,
+  type ChaosUpd,
   type DashC2S,
   type DashS2C,
   type FleetDelta,
@@ -123,10 +124,12 @@ export class MockSocket implements BackendListener {
         const before = new Set(this.rooms);
         const res = this.handleSub(payload as SubReq);
         reply(res);
-        // §7.3: the ack is followed by one full fleet:delta for each fleet room just joined.
+        // §7.3: the ack is followed by one full fleet:delta for each fleet room just joined. Joining meta
+        // likewise gets the current chaos runs, so a page opened mid-run shows them.
         for (const r of res.joined) {
           const parsed = before.has(r) ? null : parseRoom(r);
           if (parsed?.kind === 'fleet' && this.backend.frame) this.sendFleet(this.backend.frame, parsed.arg, true);
+          if (parsed?.kind === 'meta') this.send('chaos:upd', this.backend.chaosActive());
         }
         break;
       }
@@ -284,6 +287,10 @@ export class MockSocket implements BackendListener {
       rows.push([i, cpu, mem, status]);
     }
     if (rows.length) this.send('fleet:delta', [frame.tSec, ...rows] as FleetDelta);
+  }
+
+  onChaos(upd: ChaosUpd): void {
+    if (this.connected && this.rooms.has(room.meta)) this.send('chaos:upd', upd);
   }
 
   onNote(incidentId: string, entry: TimelineEntry): void {

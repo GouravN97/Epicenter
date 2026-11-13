@@ -57,7 +57,7 @@ describe('replay recording', () => {
   it('shows a killed node as silent while it was down and reporting again after', () => {
     const be = backendAt(NODE_KILL + 100);
     const { inc, rec } = record(be, admin);
-    const target = be.world.faultAt(NODE_KILL + 1)!.nodeIdx!;
+    const target = be.world.scheduledAt(NODE_KILL + 1)!.nodeIdx!;
     const fleet = new FleetState();
     rec.frameAt(inc.startedAt + 5_000, fleet, be.world.nodes.length);
     expect(fleet.status[target]).toBe(NodeStatus.silent);

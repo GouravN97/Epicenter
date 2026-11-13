@@ -63,7 +63,7 @@ describe('mock world', () => {
   it('slow-db raises latency on db and cascades to its dependents, not to payments', () => {
     const w = createMockWorld();
     const t = SLOW_DB_START + 30;
-    expect(w.faultAt(t)).toMatchObject({ kind: 'slow-db', service: 'db' });
+    expect(w.scheduledAt(t)).toMatchObject({ kind: 'slow-db', service: 'db' });
     const rise = (svc: string) => {
       const n = w.nodes.find((x) => x.serviceId === svc)!;
       return w.pointAt(n.idx, t)!.lat - w.pointAt(n.idx, t, false)!.lat;
@@ -72,12 +72,12 @@ describe('mock world', () => {
     expect(rise('orders-api')).toBeGreaterThan(40);
     expect(rise('edge-gateway')).toBeGreaterThan(40);
     expect(Math.abs(rise('payments'))).toBeLessThan(1);
-    expect(w.faultAt(CYCLE0 + FAULT_END)).toBeNull();
+    expect(w.scheduledAt(CYCLE0 + FAULT_END)).toBeNull();
   });
 
   it('node-kill makes one node stop reporting', () => {
     const w = createMockWorld();
-    const f = w.faultAt(NODE_KILL_START + 10)!;
+    const f = w.scheduledAt(NODE_KILL_START + 10)!;
     expect(f.kind).toBe('node-kill');
     expect(w.pointAt(f.nodeIdx!, NODE_KILL_START + 10)).toBeNull();
     expect(w.pointAt(f.nodeIdx!, NODE_KILL_START - 1)).not.toBeNull();
@@ -110,7 +110,7 @@ describe('mock backend', () => {
 
   it('marks a killed node silent and recovers it', () => {
     const h = harness(NODE_KILL_START - 5);
-    const target = h.backend.world.faultAt(NODE_KILL_START + 1)!.nodeIdx!;
+    const target = h.backend.world.scheduledAt(NODE_KILL_START + 1)!.nodeIdx!;
     h.at(NODE_KILL_START + 12);
     expect(h.backend.frame!.status[target]).toBe(NodeStatus.silent);
     expect(h.backend.alerts(admin, { state: 'firing' })[0]).toMatchObject({ rule: 'heartbeat', severity: 'crit' });

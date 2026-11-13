@@ -6,6 +6,7 @@
 // instant computed without the fault. The payload shapes are the real ones, which is what the UI needs.
 import {
   ALERTS_PAGE_DEFAULT,
+  CHAOS_SCENARIOS,
   CHAOS_LINK_WINDOW_MS,
   REPLAY_MAX_RANGE_MS,
   AUTO_1S_MAX_RANGE_MS,
@@ -34,7 +35,11 @@ import {
   type ColumnarSeries,
   type IncidentDTO,
   type IncidentDetailDTO,
+  type ChaosActiveRun,
+  type ChaosScenarioDef,
   type ChaosScenarioId,
+  type ChaosStartBody,
+  type ChaosUpd,
   type ChaosScorecard,
   type MetricValues,
   type NodeSeriesResponse,
@@ -56,7 +61,9 @@ import { createMockWorld, type MockNode, type MockWorld } from './mockWorld';
 export const MOCK_LAG_SEC = 3;
 /** Seconds of the past simulated at start-up so alerts and incidents exist on first load. */
 const WARMUP_SEC = 600;
-const WATCHED: readonly ('cpu' | 'lat' | 'err')[] = ['cpu', 'lat', 'err'];
+const WATCHED: readonly ('cpu' | 'mem' | 'lat' | 'err')[] = ['cpu', 'mem', 'lat', 'err'];
+/** Most chaos runs that may be active at once. */
+const MAX_ACTIVE_RUNS = 5;
 
 export interface TickFrame {
   tSec: number;
@@ -75,6 +82,20 @@ export interface BackendListener {
   onIncident(kind: 'new' | 'upd', incident: IncidentDTO): void;
   onNote?(incidentId: string, entry: TimelineEntry): void;
   onPresence?(incidentId: string, users: PresenceUser[]): void;
+  onChaos?(upd: ChaosUpd): void;
+}
+
+interface ChaosRunRec {
+  runId: string;
+  scenario: ChaosScenarioId;
+  /** nodeId, serviceId or null, as the client sent it. */
+  target: string | null;
+  /** The service a correct detection should name; null for fleet-wide scenarios. */
+  expected: ServiceId | null;
+  startedAt: number;
+  endsAt: number;
+  endedAt: number | null;
+  startedBy: string;
 }
 
 interface IncidentRec {
@@ -166,7 +187,7 @@ export class MockBackend {
   private tick(tSec: number): void {
     const { world } = this;
     const n = world.nodes.length;
-    const fault = world.faultAt(tSec);
+    const faulty = world.faultsAt(tSec).length > 0;
     const points: (MetricValues | null)[] = new Array(n);
 
     for (let i = 0; i < n; i++) {
@@ -184,7 +205,7 @@ export class MockBackend {
       this.lastSeen[i] = tSec;
       if (this.firing.has(hbKey)) this.resolve(tSec, hbKey);
 
-      const base = fault ? world.pointAt(i, tSec, false)! : p;
+      const base = faulty ? world.pointAt(i, tSec, false)! : p;
       for (let k = 0; k < WATCHED.length; k++) {
         const metric = WATCHED[k]!;
         const j = i * WATCHED.length + k;
@@ -194,7 +215,7 @@ export class MockBackend {
           this.okStreak[j] = 0;
           if (this.streak[j]! < 0xffff) this.streak[j]!++;
           if (this.streak[j]! < ZSCORE_STREAK) continue;
-          const crit = metric === 'cpu' ? p.cpu > 90 : metric === 'err' ? p.err > 5 : p.lat > 4 * base.lat;
+          const crit = metric === 'cpu' ? p.cpu > 90 : metric === 'mem' ? p.mem > 92 : metric === 'err' ? p.err > 5 : p.lat > 4 * base.lat;
           const severity = crit ? 'crit' : 'warn';
           const existing = this.firing.get(key);
           if (!existing) {
@@ -221,6 +242,7 @@ export class MockBackend {
     }
 
     this.closeQuietIncidents(tSec);
+    this.expireRuns(tSec);
     this.frame = this.buildFrame(tSec, points);
     for (const l of this.listeners) l.onTick(this.frame);
   }
@@ -265,31 +287,37 @@ export class MockBackend {
       svcPts.push([svc.idx, tSec * 1000, round1(cpu / d), round1(mem / d), round1(latP95), round1(err / d), round1(rps)]);
     }
 
-    // Plausible pipeline numbers so the Pipeline page has something to draw. Not measurements.
-    const eps = reporting * 2;
+    // Plausible pipeline numbers so the Pipeline page has something to draw. Not measurements. Active
+    // chaos scenarios move the counters the way the plan says the real ones should (§8.9).
+    const active = new Set(this.activeRuns(tSec).map((r) => r.scenario));
+    const surge = active.has('traffic-surge');
+    const eps = reporting * 2 * (surge ? 5 : 1);
+    const shed429 = surge ? Math.round(eps * 0.08) : 0;
+    const duplicate = active.has('duplicate-storm') ? eps * 2 : 0;
+    const flood = active.has('malformed-flood');
     const stats: PipelineStats = {
       ts: tSec * 1000,
       eps,
-      accepted: eps,
-      duplicate: 0,
-      outOfOrder: 0,
-      lateCorrected: 0,
+      accepted: eps - shed429,
+      duplicate,
+      outOfOrder: duplicate ? Math.round(eps * 0.3) : 0,
+      lateCorrected: duplicate ? Math.round(reporting * 0.1) : 0,
       stale: 0,
-      rejected: 0,
-      shed429: 0,
+      rejected: flood ? 200 : 0,
+      shed429: shed429 + (flood ? 140 : 0),
       bucketsOpen: reporting * 3,
       writeBatch: reporting,
-      writeMs: 0,
-      writeBuffer: 0,
+      writeMs: surge ? 18 : 6,
+      writeBuffer: surge ? reporting * 4 : 0,
       writeDropped: 0,
       socketsDash: this.listeners.size,
       rooms: 0,
       emitsPerSec: 0,
       bytesOutPerSec: 0,
-      loopLagP99: 0,
-      rssMb: 0,
+      loopLagP99: surge ? 140 : flood ? 35 : 4,
+      rssMb: 140,
       clientE2eP95: 0,
-      shedding: false,
+      shedding: surge,
     };
     return { tSec, points, status: this.status.slice(), topoRows, svcPts, stats };
   }
@@ -608,16 +636,20 @@ export class MockBackend {
    * within the link window before the incident is scored like a chaos run (§8.7).
    */
   private scorecard(inc: IncidentRec): ChaosScorecard | null {
+    // A Chaos Lab run that started within the link window before the incident (§8.7).
+    const run = this.runs.find((r) => r.startedAt <= inc.dto.startedAt && inc.dto.startedAt - r.startedAt <= CHAOS_LINK_WINDOW_MS);
+    if (run) return this.score(run, inc);
+    // Otherwise the scheduled background fault that caused it, scored the same way.
     const startSec = Math.floor(inc.dto.startedAt / 1000);
     for (let back = 0; back * 1000 <= CHAOS_LINK_WINDOW_MS; back += 5) {
-      const f = this.world.faultAt(startSec - back);
+      const f = this.world.scheduledAt(startSec - back);
       if (!f) continue;
       const startedAt = f.startSec * 1000;
       if (inc.dto.startedAt - startedAt > CHAOS_LINK_WINDOW_MS || startedAt > inc.dto.startedAt) return null;
       const target = f.nodeIdx !== null ? this.world.nodes[f.nodeIdx]!.nodeId : f.service;
       return {
         runId: `mock-${f.cycle}`,
-        scenario: f.kind as ChaosScenarioId,
+        scenario: f.kind,
         target,
         startedAt,
         detectedAt: inc.dto.startedAt,
@@ -627,6 +659,128 @@ export class MockBackend {
       };
     }
     return null;
+  }
+
+  private score(run: ChaosRunRec, inc: IncidentRec | undefined): ChaosScorecard {
+    return {
+      runId: run.runId,
+      scenario: run.scenario,
+      target: run.target,
+      startedAt: run.startedAt,
+      detectedAt: inc?.dto.startedAt ?? null,
+      timeToDetectMs: inc ? inc.dto.startedAt - run.startedAt : null,
+      detectedEpicenter: inc?.dto.epicenter ?? null,
+      // Fleet-wide scenarios have no single root cause to name, so they are not scored.
+      correct: !inc || !run.expected || inc.dto.epicenter === null ? null : inc.dto.epicenter === run.expected,
+    };
+  }
+
+  // ------------------------------------------------------------------ chaos (§6.3)
+
+  private runs: ChaosRunRec[] = []; // newest first
+
+  private activeRuns(tSec = this.cursor): ChaosRunRec[] {
+    return this.runs.filter((r) => r.endedAt === null && r.startedAt <= tSec * 1000);
+  }
+
+  chaosActive(): ChaosUpd {
+    return {
+      active: this.runs
+        .filter((r) => r.endedAt === null)
+        .map((r): ChaosActiveRun => ({ runId: r.runId, scenario: r.scenario, target: r.target, endsAt: r.endsAt })),
+    };
+  }
+
+  private emitChaos(): void {
+    const upd = this.chaosActive();
+    for (const l of this.listeners) l.onChaos?.({ active: upd.active.map((a) => ({ ...a })) });
+  }
+
+  private expireRuns(tSec: number): void {
+    let changed = false;
+    for (const r of this.runs) {
+      if (r.endedAt === null && tSec * 1000 >= r.endsAt) {
+        r.endedAt = r.endsAt;
+        changed = true;
+      }
+    }
+    if (changed) this.emitChaos();
+  }
+
+  chaosScenarios(user: UserDTO): { scenarios: readonly ChaosScenarioDef[]; active: ChaosActiveRun[] } {
+    if (user.role !== 'admin') throw new MockHttpError(403, 'forbidden', 'Requires role: admin');
+    return { scenarios: CHAOS_SCENARIOS, active: this.chaosActive().active };
+  }
+
+  /** POST /chaos/start. The fault starts at the next second the mock computes, so history never changes. */
+  chaosStart(user: UserDTO, body: Partial<ChaosStartBody>): ChaosActiveRun {
+    if (user.role !== 'admin') throw new MockHttpError(403, 'forbidden', 'Requires role: admin');
+    const def = CHAOS_SCENARIOS.find((s) => s.id === body?.scenario);
+    if (!def) throw new MockHttpError(400, 'validation_failed', 'Unknown scenario');
+    const duration = body.durationSec ?? def.defaultDurationSec;
+    if (!Number.isInteger(duration) || duration < 5 || duration > 1800) {
+      throw new MockHttpError(400, 'validation_failed', 'Duration must be a whole number of seconds from 5 to 1800');
+    }
+    if (this.chaosActive().active.length >= MAX_ACTIVE_RUNS) {
+      throw new MockHttpError(409, 'too_many_runs', `At most ${MAX_ACTIVE_RUNS} scenarios can run at once`);
+    }
+
+    let target: string | null = null;
+    let expected: ServiceId | null = null;
+    let nodeIdx: number | null = null;
+    if (def.targetKind === 'node') {
+      const node = body.target ? this.world.nodeById.get(body.target) : undefined;
+      if (!node) throw new MockHttpError(400, 'validation_failed', 'Pick a node to target');
+      target = node.nodeId;
+      expected = node.serviceId;
+      nodeIdx = node.idx;
+    } else if (def.targetKind === 'service') {
+      const svc = body.target ?? def.defaultTarget;
+      if (!svc || !isServiceId(svc)) throw new MockHttpError(400, 'validation_failed', 'Pick a service to target');
+      target = svc;
+      expected = svc;
+    }
+
+    const startSec = this.cursor + 1;
+    const run: ChaosRunRec = {
+      runId: newId(),
+      scenario: def.id,
+      target,
+      expected,
+      startedAt: startSec * 1000,
+      endsAt: (startSec + duration) * 1000,
+      endedAt: null,
+      startedBy: user.name,
+    };
+    this.runs.unshift(run);
+    if (this.runs.length > 200) this.runs.length = 200;
+    this.world.inject({ runId: run.runId, kind: def.id, startSec, endSec: startSec + duration, service: expected, nodeIdx });
+    this.emitChaos();
+    return { runId: run.runId, scenario: run.scenario, target: run.target, endsAt: run.endsAt };
+  }
+
+  /** POST /chaos/stop. With a runId, stops that run; without, stops every active run. */
+  chaosStop(user: UserDTO, runId?: string): ChaosUpd {
+    if (user.role !== 'admin') throw new MockHttpError(403, 'forbidden', 'Requires role: admin');
+    const endSec = this.cursor + 1;
+    for (const r of this.runs) {
+      if (r.endedAt !== null || (runId && r.runId !== runId)) continue;
+      r.endedAt = Math.max(r.startedAt, endSec * 1000);
+      this.world.endInjected(r.runId, endSec);
+    }
+    this.emitChaos();
+    return this.chaosActive();
+  }
+
+  /** Recent runs with their scorecards, newest first. An incident links to a run that started ≤ 120 s before it. */
+  chaosRuns(user: UserDTO): (ChaosScorecard & { endsAt: number; endedAt: number | null; startedBy: string; incidentId: string | null })[] {
+    if (user.role !== 'admin') throw new MockHttpError(403, 'forbidden', 'Requires role: admin');
+    return this.runs.map((run) => {
+      const inc = [...this.incidents]
+        .reverse()
+        .find((i) => i.dto.startedAt >= run.startedAt && i.dto.startedAt - run.startedAt <= CHAOS_LINK_WINDOW_MS);
+      return { ...this.score(run, inc), endsAt: run.endsAt, endedAt: run.endedAt, startedBy: run.startedBy, incidentId: inc?.dto.id ?? null };
+    });
   }
 
   /** GET /replay: 1-second columnar series for every visible node of `services`, capped at 10 minutes. */
