@@ -2,7 +2,7 @@
 // One socket per tab, opened after login and closed on logout.
 import { io, type Socket } from 'socket.io-client';
 import { create } from 'zustand';
-import { NS_DASH } from './contract';
+import { NS_DASH } from '@epicenter/shared';
 import { API_URL, USE_MOCK } from './env';
 
 export type ConnectionStatus = 'offline' | 'connecting' | 'live' | 'reconnecting' | 'mock';

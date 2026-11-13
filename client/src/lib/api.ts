@@ -1,5 +1,5 @@
 // REST client for /api/v1 (plan §6). Errors arrive as `{ error: { code, message } }`.
-import type { ApiError } from './contract';
+import type { ApiError } from '@epicenter/shared';
 import { API_URL, USE_MOCK } from './env';
 
 export class HttpError extends Error {

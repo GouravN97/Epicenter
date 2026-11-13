@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { LoginResponse, Role, UserDTO } from '../lib/contract';
+import type { LoginResponse, Role, UserDTO } from '@epicenter/shared';
 import { api, bindAuth, HttpError } from '../lib/api';
 
 const TOKEN_KEY = 'epicenter.token';

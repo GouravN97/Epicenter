@@ -1,5 +1,5 @@
 // Mock REST layer for mock mode. Covers the auth routes (plan §6.3); later tasks add more routes here.
-import type { LoginBody, LoginResponse, UserDTO } from '../lib/contract';
+import type { LoginBody, LoginResponse, UserDTO } from '@epicenter/shared';
 import { HttpError } from '../lib/api';
 
 export const SEED_USERS: UserDTO[] = [

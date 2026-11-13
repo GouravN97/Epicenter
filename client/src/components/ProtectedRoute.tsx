@@ -1,6 +1,6 @@
 import { ShieldAlert } from 'lucide-react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import type { Role } from '../lib/contract';
+import type { Role } from '@epicenter/shared';
 import { hasRole, useAuth } from '../state/authStore';
 import { EmptyState } from './EmptyState';
 

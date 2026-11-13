@@ -1,6 +1,6 @@
 import { Activity, FlaskConical, LayoutGrid, LogOut, Network, Siren, type LucideIcon } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
-import type { Role } from '../lib/contract';
+import type { Role } from '@epicenter/shared';
 import { hasRole, useAuth } from '../state/authStore';
 import { ConnectionBadge } from './ConnectionBadge';
 
