@@ -36,7 +36,7 @@ async function request<T>(method: string, path: string, opts: { body?: unknown; 
   try {
     if (USE_MOCK) {
       const { mockRequest } = await import('../mocks/mockApi');
-      return (await mockRequest(method, path, opts.body, token)) as T;
+      return (await mockRequest(method, path, opts.body, opts.query, token)) as T;
     }
 
     let res: Response;
