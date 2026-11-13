@@ -299,7 +299,11 @@ export function IncidentRoom() {
     setRecState({ status: 'loading' });
     try {
       const w = replayWindow(incident, clock.liveNow() - 3000, REPLAY_MAX_RANGE_MS);
-      const res = await api.get<ReplayResponse>('/replay', { from: w.from, to: w.to, services: involved.join(',') });
+      // Only services this user may see: the server refuses the whole request if any one is out of scope,
+      // and an incident can span teams (a payments viewer still gets the payments part of the recording).
+      const mine = involved.filter((sid) => isServiceId(sid) && teams.includes(SERVICE_BY_ID[sid].team));
+      if (!mine.length) throw new Error('None of the services in this incident belong to your teams');
+      const res = await api.get<ReplayResponse>('/replay', { from: w.from, to: w.to, services: mine.join(',') });
       const r = new ReplayRecording(res, detail.alerts, (nodeId) => registry.idxByNodeId.get(nodeId));
       setRec(r);
       setRecState({ status: 'ready' });
@@ -308,7 +312,7 @@ export function IncidentRoom() {
       setRecState({ status: 'error', message: err instanceof Error ? err.message : 'Could not load the recording' });
       return null;
     }
-  }, [incident, detail, involved]);
+  }, [incident, detail, involved, teams]);
 
   // A resolved incident opens straight into its recording, paused at the first alert.
   const autoOpened = useRef(false);

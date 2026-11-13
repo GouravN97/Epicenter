@@ -11,7 +11,7 @@
 //   the server answers long ranges with 1-minute points, which must not be mixed with 1-second live
 //   points in one buffer. These windows therefore get their own buffer, take no live subscription, and
 //   refetch their newest stretch every 30 s.
-import { AUTO_1S_MAX_RANGE_MS, GAP_FILL_OVERLAP_MS, METRICS, MINUTE_MS, type ColumnarSeries } from '@epicenter/shared';
+import { AUTO_1S_MAX_RANGE_MS, GAP_FILL_OVERLAP_MS, METRICS, MINUTE_MS, WRITER_FLUSH_MS, type ColumnarSeries } from '@epicenter/shared';
 import type { RoomManager } from './RoomManager';
 import type { SeriesBuffer } from './SeriesBuffer';
 import type { TelemetryStore } from './TelemetryStore';
@@ -32,7 +32,19 @@ export interface SeriesOptions {
   offsetMs?: number;
   /** Refetch interval for polled windows. Default 30 s. */
   pollMs?: number;
+  /**
+   * Delay before the seam fill (see below). Defaults to two writer flushes plus a margin.
+   */
+  seamMs?: number;
 }
+
+/**
+ * The seam: a second can be finalized and broadcast just before our subscription takes effect, yet still
+ * sit in the server's write buffer (flushed every WRITER_FLUSH_MS) when the history query runs, so neither
+ * path delivers it. Seen against the real server on every first load. After each history load or gap-fill
+ * of a live window, the newest few seconds are fetched once more after the writer has flushed.
+ */
+const SEAM_MS = 2 * WRITER_FLUSH_MS + 500;
 
 export type SeriesState = { status: 'loading' } | { status: 'ready' } | { status: 'error'; message: string };
 
@@ -76,6 +88,16 @@ export function openSeries(deps: SeriesDeps, room: string, rangeMs: number, opts
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   /** Newest timestamp held when the connection dropped: where the gap starts. */
   let gapFrom: number | null = null;
+  const seamTimers = new Set<ReturnType<typeof setTimeout>>();
+  /** Live windows: re-read [to − overlap, now] once the server has flushed what was in its write buffer. */
+  const fillSeam = (to: number) => {
+    if (!live || closed) return;
+    const t = setTimeout(() => {
+      seamTimers.delete(t);
+      if (!closed) void loadTail(to - GAP_FILL_OVERLAP_MS);
+    }, opts.seamMs ?? SEAM_MS);
+    seamTimers.add(t);
+  };
 
   const set = (s: SeriesState) => {
     state = s;
@@ -95,6 +117,7 @@ export function openSeries(deps: SeriesDeps, room: string, rangeMs: number, opts
       const end = windowEnd();
       await load(end - rangeMs, end);
       if (!closed) set({ status: 'ready' });
+      fillSeam(end);
     } catch (err) {
       if (!closed) set({ status: 'error', message: err instanceof Error ? err.message : 'Could not load history' });
     }
@@ -128,8 +151,11 @@ export function openSeries(deps: SeriesDeps, room: string, rangeMs: number, opts
       return;
     }
     // Gap-fill. If it fails, gapFrom is kept and the next reconnect retries from the same place.
+    const end = windowEnd();
     void loadTail(gapFrom === null ? -Infinity : gapFrom - GAP_FILL_OVERLAP_MS).then((ok) => {
-      if (ok) gapFrom = null;
+      if (!ok) return;
+      gapFrom = null;
+      fillSeam(end);
     });
   });
 
@@ -159,6 +185,7 @@ export function openSeries(deps: SeriesDeps, room: string, rangeMs: number, opts
       abort.abort();
       offConn();
       if (pollTimer) clearInterval(pollTimer);
+      for (const t of seamTimers) clearTimeout(t);
       releaseRoom?.();
       store.release(key);
       listeners.clear();

@@ -258,6 +258,30 @@ describe('series session: history + live + reconnect', () => {
     session.close();
   });
 
+  it('fills the seam: a second broadcast before the subscription and not yet written when history was read', async () => {
+    const s = setup();
+    // Like the real server: the newest finalized second is still in the write buffer when history is read.
+    const real = s.deps.fetchHistory;
+    let calls = 0;
+    s.deps.fetchHistory = async (...args) => {
+      const res = await real(...args);
+      if (calls++ > 0) return res;
+      const keep = res.t.length - 1;
+      return { ...res, t: res.t.slice(0, keep), rev: res.rev.slice(0, keep), ...Object.fromEntries(METRICS.map((m) => [m, res[m].slice(0, keep)])) } as typeof res;
+    };
+    const session = openSeries(s.deps, s.key, RANGE, { seamMs: 5 });
+    await tick();
+    s.w.at(T0 + 3); // live points start after the missing second
+    const missing = T0 * 1000;
+    expect(session.buffer.indexOf(missing)).toBe(-1);
+
+    await new Promise((r) => setTimeout(r, 20)); // the seam fill runs once the writer would have flushed
+    expect(session.buffer.indexOf(missing)).toBeGreaterThanOrEqual(0);
+    s.expectMatches(session.buffer, s.reference(RANGE + 3000));
+    expect(s.ranges.at(-1)![0]).toBe((T0 + MOCK_LAG_SEC) * 1000 - 5000); // only the newest few seconds, not the whole range
+    session.close();
+  });
+
   it('heals the gap left by a dropped connection', async () => {
     const s = setup();
     const session = openSeries(s.deps, s.key, RANGE);
@@ -275,8 +299,7 @@ describe('series session: history + live + reconnect', () => {
     expect(session.buffer.lastT).toBe((T0 + 40) * 1000);
     s.expectMatches(session.buffer, s.reference(RANGE + 40_000));
     // The gap-fill asked only for the missing stretch (plus the 5 s overlap), not the whole range again.
-    expect(s.ranges.at(-1)).toEqual([(T0 + 10) * 1000 - 5000, s.ranges.at(-1)![1]]);
-    expect(s.fetchCount()).toBe(2);
+    expect(s.ranges[1]).toEqual([(T0 + 10) * 1000 - 5000, s.ranges[1]![1]]);
     session.close();
   });
 
