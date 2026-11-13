@@ -149,13 +149,20 @@ export class MockSocket implements BackendListener {
    * reconnect. From DevTools: `__epicenterMock.drop(20000)`.
    */
   drop(ms: number): void {
-    if (!this.connected) return;
-    this.goOffline('transport close');
-    this.later(() => {
-      if (!this.active) return;
-      this.connected = true;
-      this.dispatch('connect');
-    }, ms);
+    this.down();
+    this.later(() => this.up(), Math.max(1, ms));
+  }
+
+  /** The connection goes away (`disconnect` with reason "transport close"). */
+  down(): void {
+    if (this.connected) this.goOffline('transport close');
+  }
+
+  /** The connection comes back (`connect`), with no rooms joined. */
+  up(): void {
+    if (this.connected || !this.active) return;
+    this.connected = true;
+    this.dispatch('connect');
   }
 
   joinedRooms(): string[] {
