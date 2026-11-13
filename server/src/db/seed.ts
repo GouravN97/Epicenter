@@ -12,6 +12,7 @@ import { ALL_MODELS, AgentModel, NodeModel, UserModel } from './models';
  *  duplicate storm (×3) is ~480 ev/s, so leave headroom. */
 const SIM_AGENT_RATE = 1000;
 const SIM_AGENT_BURST = 2000;
+const FLOOD_AGENT_ID = 'sim-flood';
 
 const USERS: { email: string; name: string; role: Role; teams: readonly Team[]; pw: () => string }[] = [
   { email: 'admin@epicenter.dev', name: 'Admin', role: 'admin', teams: TEAMS, pw: () => config.seedPasswords.admin },
@@ -55,7 +56,24 @@ async function main(): Promise<void> {
       },
     })),
   );
-  console.log(`[seed] agents: ${REGIONS.map((r) => agentIdForRegion(r.id)).join(', ')}`);
+  // The malformed-flood chaos scenario sends junk under a second key. It is derived from SIM_KEY
+  // (simulator/src/flood.ts uses the same `${SIM_KEY}:flood`) so no extra secret is needed. The agent owns no
+  // real nodes and has a small budget, so the flood shows up as rejected / 429 without touching real data.
+  await AgentModel.updateOne(
+    { agentId: FLOOD_AGENT_ID },
+    {
+      $set: {
+        keyHash: hashAgentKey(`${config.simKey}:flood`),
+        name: 'Chaos: malformed flood',
+        nodePrefix: 'flood-',
+        ratePerSec: 50,
+        burst: 100,
+        enabled: true,
+      },
+    },
+    { upsert: true },
+  );
+  console.log(`[seed] agents: ${[...REGIONS.map((r) => agentIdForRegion(r.id)), FLOOD_AGENT_ID].join(', ')}`);
 
   const fleet = buildFleet();
   await NodeModel.bulkWrite(
