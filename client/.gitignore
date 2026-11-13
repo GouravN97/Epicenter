@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.vite/
+# Standalone lockfile only exists until the root workspace (task A1) lands; the root lockfile is authoritative.
+package-lock.json
