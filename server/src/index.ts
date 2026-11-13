@@ -16,6 +16,8 @@ import { createControl } from './realtime/control';
 import { Correlator } from './pipeline/correlator';
 import { IncidentStore, closeStaleIncidents } from './pipeline/incidentStore';
 import { IncidentService } from './incidents/incidentService';
+import { LoadShedder, startLoadShedSampler } from './pipeline/loadShed';
+import { TokenBuckets } from './pipeline/tokenBucket';
 async function main(): Promise<void> {
   requireEnv('MONGODB_URI', 'JWT_SECRET');
   await connectDb();
@@ -91,15 +93,13 @@ async function main(): Promise<void> {
     });
   }
 
-  server.on('request', createApp({ pipeline, detector, chaos, incidents, onNote: (id, e) => rt.emitNote(id, e) }));
-  rt.broadcaster.alertStatus = (id) => detector.nodeStatus(id);
-  if (process.env.DEBUG_PIPELINE) {
-    detector.on({
-      fire: (a) => console.log(`[alert] FIRE ${a.severity} ${a.rule} ${a.nodeId}: ${a.message}`),
-      resolve: (a) => console.log(`[alert] RESOLVED ${a.rule} ${a.nodeId} ${a.metric}`),
-    });
-  }
-  rt.broadcaster.stats = () => {
+  // Backpressure (§8.4): event-loop / writer-buffer shedding and per-agent-key token buckets on ingest.
+  const shedder = new LoadShedder();
+  const stopShedSampler = startLoadShedSampler(shedder, () => writer.fill(), (m) => console.log(m));
+  const buckets = new TokenBuckets();
+
+  // Pipeline stats (§8.8): meta:pt every second and GET /meta/stats.
+  const stats = () => {
     const d = rt.dashStats();
     return snapshotStats({
       counters: pipeline.counters.prev,
@@ -107,10 +107,26 @@ async function main(): Promise<void> {
       socketsDash: d.sockets,
       rooms: d.rooms,
       emitsPerSec: rt.broadcaster.emitsPerSec,
+      bytesOutPerSec: rt.broadcaster.bytesOutPerSec,
       clientE2eP95: d.clientE2eP95,
       writer: writer.stats,
+      loopLagP99: shedder.loopLagP99,
+      shedding: shedder.shouldShed(Date.now()),
     });
   };
+
+  server.on(
+    'request',
+    createApp({ pipeline, detector, chaos, incidents, shedder, buckets, stats, onNote: (id, e) => rt.emitNote(id, e) }),
+  );
+  rt.broadcaster.alertStatus = (id) => detector.nodeStatus(id);
+  if (process.env.DEBUG_PIPELINE) {
+    detector.on({
+      fire: (a) => console.log(`[alert] FIRE ${a.severity} ${a.rule} ${a.nodeId}: ${a.message}`),
+      resolve: (a) => console.log(`[alert] RESOLVED ${a.rule} ${a.nodeId} ${a.metric}`),
+    });
+  }
+  rt.broadcaster.stats = stats;
   rt.broadcaster.start();
 
   server.listen(config.port, () => {
@@ -121,6 +137,7 @@ async function main(): Promise<void> {
     console.log(`[server] ${sig} received, shutting down`);
     pipeline.stop();
     stopNodeSync();
+    stopShedSampler();
     clearInterval(heartbeat);
     clearInterval(correlatorTick);
     void chaos.stopAll();
