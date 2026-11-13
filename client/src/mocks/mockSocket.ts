@@ -96,6 +96,7 @@ export class MockSocket implements BackendListener {
     if (this.connected) return this;
     this.active = true;
     this.unsubscribeBackend ??= this.backend.subscribe(this);
+    this.backend.trackRooms(this, () => this.rooms.size);
     this.later(() => {
       this.connected = true;
       this.dispatch('connect');
@@ -107,6 +108,7 @@ export class MockSocket implements BackendListener {
     this.active = false;
     this.unsubscribeBackend?.();
     this.unsubscribeBackend = null;
+    this.backend.trackRooms(this, null);
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
     this.goOffline('io client disconnect');
@@ -150,8 +152,11 @@ export class MockSocket implements BackendListener {
         reply({ users: this.backend.presenceJoin(id, this, { id: this.user.id, name: this.user.name }) } satisfies PresencePayload);
         break;
       }
-      case 'client:stats':
+      case 'client:stats': {
+        const st = payload as { e2eP95?: unknown } | null;
+        if (typeof st?.e2eP95 === 'number' && Number.isFinite(st.e2eP95)) this.backend.reportClientStats(this, st.e2eP95);
         break;
+      }
     }
     return this;
   }
@@ -316,6 +321,7 @@ export class MockSocket implements BackendListener {
   // ------------------------------------------------------------------ plumbing
 
   private send<E extends keyof DashS2C>(event: E, ...args: Parameters<DashS2C[E]>): void {
+    this.backend.noteEmit(JSON.stringify(args[0] ?? null).length + event.length + 6);
     this.later(() => {
       if (this.connected) this.dispatch(event, ...args);
     });

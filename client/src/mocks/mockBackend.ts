@@ -291,32 +291,40 @@ export class MockBackend {
     // chaos scenarios move the counters the way the plan says the real ones should (§8.9).
     const active = new Set(this.activeRuns(tSec).map((r) => r.scenario));
     const surge = active.has('traffic-surge');
-    const eps = reporting * 2 * (surge ? 5 : 1);
-    const shed429 = surge ? Math.round(eps * 0.08) : 0;
-    const duplicate = active.has('duplicate-storm') ? eps * 2 : 0;
     const flood = active.has('malformed-flood');
+    // Same definitions as the server's snapshotStats: eps counts every event received (accepted,
+    // duplicate, rejected, stale); shed429 events were refused before parsing and are not in eps;
+    // outOfOrder and lateCorrected are subsets of accepted.
+    const offered = reporting * 2 * (surge ? 5 : 1);
+    const shed = surge ? Math.round(offered * 0.08) : 0;
+    const accepted = offered - shed;
+    const duplicate = active.has('duplicate-storm') ? accepted * 2 : 0;
+    const rejected = flood ? 200 : 0;
+    const out = this.outbound;
+    this.outbound = { emits: 0, bytes: 0 };
+    const fresh = [...this.clientStats.values()].filter((c) => c.at > this.now() - 15_000).map((c) => c.e2eP95).sort((a, b) => a - b);
     const stats: PipelineStats = {
-      ts: tSec * 1000,
-      eps,
-      accepted: eps - shed429,
+      ts: this.now(), // emit time, as the server stamps it, so clients can measure socket delivery
+      eps: accepted + duplicate + rejected,
+      accepted,
       duplicate,
-      outOfOrder: duplicate ? Math.round(eps * 0.3) : 0,
+      outOfOrder: duplicate ? Math.round(accepted * 0.3) : 0,
       lateCorrected: duplicate ? Math.round(reporting * 0.1) : 0,
       stale: 0,
-      rejected: flood ? 200 : 0,
-      shed429: shed429 + (flood ? 140 : 0),
+      rejected,
+      shed429: shed + (flood ? 140 : 0),
       bucketsOpen: reporting * 3,
       writeBatch: reporting,
       writeMs: surge ? 18 : 6,
       writeBuffer: surge ? reporting * 4 : 0,
       writeDropped: 0,
       socketsDash: this.listeners.size,
-      rooms: 0,
-      emitsPerSec: 0,
-      bytesOutPerSec: 0,
+      rooms: this.roomsInUse(),
+      emitsPerSec: out.emits,
+      bytesOutPerSec: out.bytes,
       loopLagP99: surge ? 140 : flood ? 35 : 4,
       rssMb: 140,
-      clientE2eP95: 0,
+      clientE2eP95: fresh.length ? Math.round(fresh[fresh.length >> 1]!) : 0,
       shedding: surge,
     };
     return { tSec, points, status: this.status.slice(), topoRows, svcPts, stats };
@@ -673,6 +681,36 @@ export class MockBackend {
       // Fleet-wide scenarios have no single root cause to name, so they are not scored.
       correct: !inc || !run.expected || inc.dto.epicenter === null ? null : inc.dto.epicenter === run.expected,
     };
+  }
+
+  // ------------------------------------------------------------------ outbound accounting (Pipeline page)
+
+  private outbound = { emits: 0, bytes: 0 };
+  private readonly clientStats = new Map<object, { e2eP95: number; at: number }>();
+  private readonly socketRooms = new Map<object, () => number>();
+
+  /** A mock socket delivered one event of `bytes` (its JSON size, as on the real wire). */
+  noteEmit(bytes: number): void {
+    this.outbound.emits++;
+    this.outbound.bytes += bytes;
+  }
+
+  reportClientStats(who: object, e2eP95: number): void {
+    this.clientStats.set(who, { e2eP95, at: this.now() });
+  }
+
+  trackRooms(who: object, count: (() => number) | null): void {
+    if (count) this.socketRooms.set(who, count);
+    else {
+      this.socketRooms.delete(who);
+      this.clientStats.delete(who);
+    }
+  }
+
+  private roomsInUse(): number {
+    let n = 0;
+    for (const c of this.socketRooms.values()) n += c();
+    return n;
   }
 
   // ------------------------------------------------------------------ chaos (§6.3)

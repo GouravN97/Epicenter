@@ -86,10 +86,12 @@ describe('chaos runs in the mock', () => {
         'traffic-surge',
         (s: Record<string, unknown>) => {
           expect(s).toMatchObject({ shedding: true });
-          expect(s.eps).toBe(48 * 2 * 5);
+          expect(s.eps).toBe(s.accepted);
+          expect(s.accepted as number).toBeGreaterThan(48 * 2 * 4);
+          expect(s.shed429 as number).toBeGreaterThan(0);
         },
       ],
-      ['duplicate-storm', (s: Record<string, unknown>) => expect(s.duplicate as number).toBeGreaterThan(0)],
+      ['duplicate-storm', (s: Record<string, unknown>) => expect(s).toMatchObject({ duplicate: (s.accepted as number) * 2, eps: (s.accepted as number) * 3 })],
       ['malformed-flood', (s: Record<string, unknown>) => expect(s.rejected as number).toBeGreaterThan(0)],
     ] as const) {
       const h = harness();

@@ -1,6 +1,7 @@
 // The live data layer: one store, one room manager, one topology, one fleet state, one clock, wired to
 // the socket and the session. `initDataLayer()` is called once at start-up.
 import {
+  CLIENT_STATS_INTERVAL_MS,
   METRICS,
   NODE_PT_METRIC0,
   NP,
@@ -11,6 +12,7 @@ import {
   type ColumnarSeries,
   type FleetDelta,
   type NodePt,
+  type PipelineStats,
   TEAMS,
   type SvcPt,
   type Team,
@@ -25,6 +27,7 @@ import { useAuth } from '../state/authStore';
 import { useIncidents } from '../state/incidentStore';
 import { Clock } from './clock';
 import { FleetState } from './fleetState';
+import { FpsMeter, META_COLS, metaRow } from './pipelineStats';
 import { Ring } from './ring';
 import { RoomManager, type RoomSocket } from './RoomManager';
 import type { SeriesDeps } from './seriesSession';
@@ -43,6 +46,15 @@ export const clock = new Clock();
  * It includes the ~3 s the aggregator waits for late events, so about 3–4 s is healthy.
  */
 export const delay = new Ring(60);
+
+/** Socket delivery time in ms, one sample per meta:pt: receipt − the server's emit timestamp. */
+export const transport = new Ring(60);
+export const fps = new FpsMeter();
+/** Latest pipeline stats (meta:pt), for the Pipeline page. */
+export const pipeline: { latest: PipelineStats | null; version: number } = { latest: null, version: 0 };
+/** Store key of the pipeline stats buffer (columns: META_COLS). Holders acquire it with that width. */
+export const META_KEY = 'meta';
+export const META_WIDTH = META_COLS.length;
 
 /** Draw key for everything that renders from `fleet` (heatmap, stat tiles). */
 export const FLEET_KEY = 'fleet';
@@ -101,6 +113,31 @@ function onFleetDelta(d: FleetDelta): void {
   store.markDirty(FLEET_KEY);
 }
 
+function onMetaPt(st: PipelineStats): void {
+  pipeline.latest = st;
+  pipeline.version++;
+  if (Number.isFinite(st.ts)) transport.push(Math.max(0, clock.liveNow() - st.ts));
+  const local = delay.quantile(0.95);
+  store.upsert(META_KEY, st.ts, metaRow(st, Number.isFinite(local) ? local : NaN));
+  store.markDirty(META_KEY);
+}
+
+/** Reports this browser's delay and frame rate (§7.2 client:stats) so the server can show them for all clients. */
+function startClientStats(): void {
+  fps.start();
+  setInterval(() => {
+    const socket = currentSocket;
+    if (!socket?.connected || delay.length < 3) return;
+    const f = fps.read();
+    socket.emit('client:stats', {
+      e2eP50: Math.round(delay.quantile(0.5)),
+      e2eP95: Math.round(delay.quantile(0.95)),
+      fps: f ?? 0,
+    });
+  }, CLIENT_STATS_INTERVAL_MS);
+}
+let currentSocket: DashSocket | null = null;
+
 function onTopoTick(t: TopoTick): void {
   topo.apply(t);
   store.markDirty(TOPO_KEY);
@@ -123,10 +160,13 @@ let started = false;
 export function initDataLayer(): void {
   if (started) return;
   started = true;
+  startClientStats();
 
   onSocketChange((socket) => {
     rooms.attach(socket as unknown as RoomSocket | null);
+    currentSocket = socket;
     if (!socket) return;
+    socket.on('meta:pt', onMetaPt);
     socket.on('node:pt', onNodePt);
     socket.on('svc:pt', onSvcPt);
     socket.on('fleet:delta', onFleetDelta);
@@ -162,6 +202,9 @@ export function initDataLayer(): void {
       fleet.reset();
       topo.reset();
       delay.clear();
+      transport.clear();
+      pipeline.latest = null;
+      pipeline.version++;
       useAlerts.getState().reset();
       useIncidents.getState().reset();
       store.markDirty(FLEET_KEY);
