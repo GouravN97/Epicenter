@@ -39,7 +39,7 @@ const CONGESTION_RECHECK_MS = 200;
 export class Broadcaster {
   /** Alert-derived node status (A7 detector plugs in here). Silence is handled separately. */
   alertStatus: (nodeId: string) => NodeStatus = () => NodeStatus.ok;
-  /** Pipeline stats for meta:pt (A10 completes the gauges). */
+  /** Builds the pipeline stats snapshot for meta:pt. */
   stats: (() => PipelineStats) | null = null;
   /** Emits in the last completed second. */
   emitsPerSec = 0;
@@ -52,6 +52,9 @@ export class Broadcaster {
   private svcNodes = new Map<ServiceId, NodeInfo[]>();
   private indexedCount = -1;
   private emits = 0;
+  /** Bytes sent in the last completed second (payload × recipients). */
+  bytesOutPerSec = 0;
+  private bytes = 0;
   /** Points not sent to a socket because it was congested, last second. */
   skippedPerSec = 0;
   private skipped = 0;
@@ -97,9 +100,26 @@ export class Broadcaster {
   private emitDroppable<E extends 'node:pt' | 'svc:pt' | 'meta:pt'>(r: string, ev: E, ...args: Parameters<DashS2C[E]>): void {
     const skip = this.congested();
     const members = this.nsp.adapter.rooms.get(r);
-    if (skip.length && members) for (const id of skip) if (members.has(id)) this.skipped++;
+    let skipped = 0;
+    if (skip.length && members) for (const id of skip) if (members.has(id)) skipped++;
+    this.skipped += skipped;
     (skip.length ? this.nsp.to(r).except(skip) : this.nsp.to(r)).emit(ev, ...args);
+    this.account(ev, args[0], (members?.size ?? 0) - skipped);
+  }
+
+  /** Emit to every member of a room. */
+  private emitAll<E extends 'fleet:delta' | 'topo:tick'>(r: string, ev: E, ...args: Parameters<DashS2C[E]>): void {
+    this.nsp.to(r).emit(ev, ...args);
+    this.account(ev, args[0], this.nsp.adapter.rooms.get(r)?.size ?? 0);
+  }
+
+  /**
+   * bytesOutPerSec (§8.8): encoded payload length × recipients. JSON length approximates the wire size of
+   * Socket.IO's default parser (plus a few bytes of framing per packet).
+   */
+  private account(ev: string, payload: unknown, recipients: number): void {
     this.emits++;
+    if (recipients > 0) this.bytes += (JSON.stringify(payload).length + ev.length + 6) * recipients;
   }
 
   /** Re-indexes nodes by team and service when the registry grows. */
@@ -178,8 +198,7 @@ export class Broadcaster {
         let ts = 0;
         for (const n of nodes) ts = Math.max(ts, this.pipeline.state.nodes.get(n.nodeId)?.lastTs ?? 0);
         const delta: FleetDelta = [Math.floor((ts || now) / 1000), ...changed];
-        this.nsp.to(fr).emit('fleet:delta', delta);
-        this.emits++;
+        this.emitAll(fr, 'fleet:delta', delta);
       }
     }
 
@@ -190,14 +209,15 @@ export class Broadcaster {
         Math.floor((ts || now) / 1000),
         ...SERVICES.map((s) => topoRow(s.idx, this.latestAgg.get(s.id), this.svcNodes.get(s.id)!.map((n) => status.get(n.nodeId)!))),
       ];
-      this.nsp.to(room.topology).emit('topo:tick', tick);
-      this.emits++;
+      this.emitAll(room.topology, 'topo:tick', tick);
     }
 
-    if (this.stats && this.occupied(room.meta)) this.emitDroppable(room.meta, 'meta:pt', this.stats());
-
+    // Roll the per-second counters before building meta:pt so it reports the second that just completed.
     this.emitsPerSec = this.emits;
     this.emits = 0;
+    this.bytesOutPerSec = this.bytes;
+    this.bytes = 0;
+    if (this.stats && this.occupied(room.meta)) this.emitDroppable(room.meta, 'meta:pt', this.stats());
     this.skippedPerSec = this.skipped;
     this.skipped = 0;
   }
