@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "Epicenter",
+			"path": "."
+		},
+		{
+			"name": "server",
+			"path": "../../Downloads/epicenter-A1/server"
+		},
+		{
+			"name": "Epicenter",
+			"path": "Epicenter"
+		}
+	],
+	"settings": {}
+}
