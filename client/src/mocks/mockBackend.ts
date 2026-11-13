@@ -6,6 +6,8 @@
 // instant computed without the fault. The payload shapes are the real ones, which is what the UI needs.
 import {
   ALERTS_PAGE_DEFAULT,
+  CHAOS_LINK_WINDOW_MS,
+  REPLAY_MAX_RANGE_MS,
   AUTO_1S_MAX_RANGE_MS,
   EDGES,
   HEARTBEAT_TIMEOUT_MS,
@@ -32,8 +34,12 @@ import {
   type ColumnarSeries,
   type IncidentDTO,
   type IncidentDetailDTO,
+  type ChaosScenarioId,
+  type ChaosScorecard,
   type MetricValues,
   type NodeSeriesResponse,
+  type PresenceUser,
+  type ReplayResponse,
   type PipelineStats,
   type ServiceId,
   type ServiceSeriesResponse,
@@ -67,6 +73,8 @@ export interface BackendListener {
   onTick(frame: TickFrame): void;
   onAlert(kind: 'new' | 'upd', alert: AlertDTO): void;
   onIncident(kind: 'new' | 'upd', incident: IncidentDTO): void;
+  onNote?(incidentId: string, entry: TimelineEntry): void;
+  onPresence?(incidentId: string, users: PresenceUser[]): void;
 }
 
 interface IncidentRec {
@@ -538,24 +546,27 @@ export class MockBackend {
     if (!isServiceId(serviceId)) throw new MockHttpError(404, 'not_found', `Unknown service ${serviceId}`);
     if (!teamsOf(user).includes(SERVICE_BY_ID[serviceId].team)) throw new MockHttpError(403, 'forbidden', 'That service belongs to another team');
     const members = this.world.nodes.filter((n) => n.serviceId === serviceId);
-    // §6.2: avg cpu/mem, sum rps, max lat. The remaining metrics are averaged.
+    // Avg cpu/mem, sum rps, p95 latency across the nodes: the same aggregate svc:pt carries live, so a
+    // service chart does not jump where history meets the stream. (§6.2 says max latency; see the note
+    // to Person A about aligning the two.) The remaining metrics are averaged.
     const sample = (s: number): MetricValues | null => {
       const acc: MetricValues = { cpu: 0, mem: 0, disk: 0, netIn: 0, netOut: 0, lat: 0, err: 0, rps: 0 };
       let count = 0;
       let rps = 0;
-      let latMax = 0;
+      const lats: number[] = [];
       for (const n of members) {
         const p = this.world.pointAt(n.idx, s);
         if (!p) continue;
         count++;
         for (const m of METRICS) acc[m] += p[m];
         rps += p.rps;
-        latMax = Math.max(latMax, p.lat);
+        lats.push(p.lat);
       }
       if (!count) return null;
       for (const m of METRICS) acc[m] /= count;
       acc.rps = rps;
-      acc.lat = latMax;
+      lats.sort((a, b) => a - b);
+      acc.lat = lats[Math.max(0, Math.ceil(0.95 * lats.length) - 1)]!;
       return acc;
     };
     return { serviceId, ...this.series(from, to, res, sample) };
@@ -588,8 +599,81 @@ export class MockBackend {
       ...this.cloneIncident(inc),
       alerts: this.alertLog.filter((a) => inc.alertIds.has(a.id)).map((a) => ({ ...a })),
       timeline: inc.timeline.map((e) => ({ ...e })),
-      chaos: null,
+      chaos: this.scorecard(inc),
     };
+  }
+
+  /**
+   * The mock's scheduled faults stand in for chaos runs (task B8 adds real ones): a fault that started
+   * within the link window before the incident is scored like a chaos run (§8.7).
+   */
+  private scorecard(inc: IncidentRec): ChaosScorecard | null {
+    const startSec = Math.floor(inc.dto.startedAt / 1000);
+    for (let back = 0; back * 1000 <= CHAOS_LINK_WINDOW_MS; back += 5) {
+      const f = this.world.faultAt(startSec - back);
+      if (!f) continue;
+      const startedAt = f.startSec * 1000;
+      if (inc.dto.startedAt - startedAt > CHAOS_LINK_WINDOW_MS || startedAt > inc.dto.startedAt) return null;
+      const target = f.nodeIdx !== null ? this.world.nodes[f.nodeIdx]!.nodeId : f.service;
+      return {
+        runId: `mock-${f.cycle}`,
+        scenario: f.kind as ChaosScenarioId,
+        target,
+        startedAt,
+        detectedAt: inc.dto.startedAt,
+        timeToDetectMs: inc.dto.startedAt - startedAt,
+        detectedEpicenter: inc.dto.epicenter,
+        correct: inc.dto.epicenter === null ? null : inc.dto.epicenter === f.service,
+      };
+    }
+    return null;
+  }
+
+  /** GET /replay: 1-second columnar series for every visible node of `services`, capped at 10 minutes. */
+  replay(user: UserDTO, from: number, to: number, services: string[]): ReplayResponse {
+    if (!(to > from)) throw new MockHttpError(400, 'bad_request', '`to` must be greater than `from`');
+    if (to - from > REPLAY_MAX_RANGE_MS) throw new MockHttpError(400, 'range_too_long', 'Replay windows are limited to 10 minutes');
+    const teams = teamsOf(user);
+    const wanted = new Set(services.length ? services : SERVICES.map((s) => s.id));
+    const nodes = this.world.nodes
+      .filter((n) => wanted.has(n.serviceId) && teams.includes(n.team))
+      .map((n) => ({ nodeId: n.nodeId, ...this.series(from, to, '1s', (s) => this.world.pointAt(n.idx, s)) }));
+    return { from, to, nodes };
+  }
+
+  /** POST /incidents/:id/notes. The note reaches clients through incident:note, the sender included. */
+  addNote(user: UserDTO, id: string, text: string): TimelineEntry {
+    if (user.role === 'viewer') throw new MockHttpError(403, 'forbidden', 'Only SREs and admins can add notes');
+    const inc = this.incidents.find((i) => i.dto.id === id);
+    if (!inc) throw new MockHttpError(404, 'not_found', 'Incident not found');
+    const clean = String(text ?? '').trim().slice(0, 2000);
+    if (!clean) throw new MockHttpError(400, 'validation_failed', 'A note needs some text');
+    const entry: TimelineEntry = { ts: this.now(), kind: 'note', text: clean, user: { id: user.id, name: user.name } };
+    inc.timeline.push(entry);
+    for (const l of this.listeners) l.onNote?.(id, { ...entry });
+    return { ...entry };
+  }
+
+  // ------------------------------------------------------------------ presence (incident war room)
+
+  private readonly presence = new Map<string, Map<object, PresenceUser>>();
+
+  presenceJoin(incidentId: string, who: object, user: PresenceUser): PresenceUser[] {
+    let m = this.presence.get(incidentId);
+    if (!m) this.presence.set(incidentId, (m = new Map()));
+    m.set(who, user);
+    return this.emitPresence(incidentId);
+  }
+
+  presenceLeave(incidentId: string, who: object): void {
+    if (this.presence.get(incidentId)?.delete(who)) this.emitPresence(incidentId);
+  }
+
+  private emitPresence(incidentId: string): PresenceUser[] {
+    // One entry per person, however many tabs they have open.
+    const users = [...new Map([...(this.presence.get(incidentId)?.values() ?? [])].map((u) => [u.id, u])).values()];
+    for (const l of this.listeners) l.onPresence?.(incidentId, users.map((u) => ({ ...u })));
+    return users;
   }
 }
 

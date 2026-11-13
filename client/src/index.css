@@ -179,3 +179,9 @@ body {
     animation: none;
   }
 }
+
+/* Replay scrubber track. */
+.replay-range {
+  accent-color: var(--color-accent);
+  height: 1.25rem;
+}

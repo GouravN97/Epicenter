@@ -98,7 +98,7 @@ const ServiceNode = memo(function ServiceNode({ data }: NodeProps<ServiceNodeT>)
           </span>
         </div>
         <div className="mt-0.5 truncate text-xs text-muted">
-          {data.hasData ? `${data.healthy}/${data.total} healthy` : 'waiting for data'}
+          {data.hasData ? `${data.healthy}/${data.total} healthy` : 'no data'}
           <span className="sr-only">. Status {st.label}.</span>
         </div>
         <Handle type="source" position={Position.Bottom} isConnectable={false} className="!opacity-0" />
@@ -193,7 +193,7 @@ function MapView({ topology, snapshot, view, selected, onSelect }: TopologyMapPr
         sloMs: def.sloMs,
         healthy: live?.healthy ?? 0,
         total: live?.total ?? 0,
-        hasData: snapshot.tsSec > 0,
+        hasData: snapshot.tsSec > 0 && (live?.total ?? 0) > 0,
         role: roleOf(p.id),
         selected: selected === p.id,
       },

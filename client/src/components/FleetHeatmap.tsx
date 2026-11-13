@@ -6,7 +6,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NodeStatus, SERVICES, SERVICE_BY_ID, isServiceId, type TopologyResponse } from '@epicenter/shared';
-import { FLEET_KEY, fleet, store, topology } from '../data/live';
+import { FLEET_KEY, fleet as liveFleet, store, topology } from '../data/live';
+import type { FleetState } from '../data/fleetState';
 import { CPU_BUCKET_LABELS, LABEL_H, cpuBucket, hitTest, layoutHeatmap, type HeatGroupInput, type HeatLayout, type HexCell } from '../lib/heatmapLayout';
 import { STATUS_VIEW, StatusIcon } from './StatusIcon';
 
@@ -81,7 +82,15 @@ function groupsOf(t: TopologyResponse): HeatGroupInput[] {
   })).filter((g) => g.nodes.length > 0);
 }
 
-export function FleetHeatmap({ topology: topo }: { topology: TopologyResponse }) {
+export interface FleetHeatmapProps {
+  topology: TopologyResponse;
+  /** State to draw. Defaults to the live fleet; the incident replay passes its recorded state. */
+  state?: FleetState;
+  /** Store key whose dirty flag triggers a redraw. Defaults to the live fleet's key. */
+  drawKey?: string;
+}
+
+export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEET_KEY }: FleetHeatmapProps) {
   const navigate = useNavigate();
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -123,13 +132,13 @@ export function FleetHeatmap({ topology: topo }: { topology: TopologyResponse })
       }
       const i = hovered.nodeIdx;
       const node = topology.nodeByIdx[i];
-      const seen = fleet.seen[i] === 1;
-      const status = seen ? fleet.status[i]! : -1;
+      const seen = state.seen[i] === 1;
+      const status = seen ? state.status[i]! : -1;
       tipField('id').textContent = node?.[1] ?? `node ${i}`;
       const svc = node && isServiceId(node[2]) ? SERVICE_BY_ID[node[2]].name : (node?.[2] ?? '');
       tipField('where').textContent = node ? `${svc} · ${node[4]}` : '';
-      tipField('cpu').textContent = seen ? `${fleet.cpu[i]}%` : '–';
-      tipField('mem').textContent = seen ? `${fleet.mem[i]}%` : '–';
+      tipField('cpu').textContent = seen ? `${state.cpu[i]}%` : '–';
+      tipField('mem').textContent = seen ? `${state.mem[i]}%` : '–';
       tipField('nodata').hidden = seen;
       for (const el of tip.querySelectorAll<HTMLElement>('[data-status]')) el.hidden = Number(el.dataset.status) !== status;
       tip.hidden = false;
@@ -163,16 +172,16 @@ export function FleetHeatmap({ topology: topo }: { topology: TopologyResponse })
       const critMark = new Path2D();
       for (const c of layout.cells) {
         const i = c.nodeIdx;
-        if (!fleet.seen[i]) {
+        if (!state.seen[i]) {
           hexPath(unseen, c.x, c.y, r);
           continue;
         }
-        const st = fleet.status[i]!;
+        const st = state.status[i]!;
         if (st === NodeStatus.silent) {
           hexPath(silent, c.x, c.y, r);
           continue;
         }
-        hexPath(heat[cpuBucket(fleet.cpu[i]!)]!, c.x, c.y, r);
+        hexPath(heat[cpuBucket(state.cpu[i]!)]!, c.x, c.y, r);
         if (st === NodeStatus.warn) hexPath(warn, c.x, c.y, r - 1);
         else if (st === NodeStatus.crit) {
           hexPath(crit, c.x, c.y, r - 1);
@@ -223,7 +232,7 @@ export function FleetHeatmap({ topology: topo }: { topology: TopologyResponse })
       hovered = cell;
       canvas.style.cursor = cell ? 'pointer' : 'default';
       showTip();
-      store.markDirty(FLEET_KEY);
+      store.markDirty(drawKey);
     };
     const cellAt = (e: PointerEvent | MouseEvent) => {
       const box = canvas.getBoundingClientRect();
@@ -257,7 +266,7 @@ export function FleetHeatmap({ topology: topo }: { topology: TopologyResponse })
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerleave', onLeave);
     canvas.addEventListener('pointerup', onUp);
-    const drawer = store.addDrawer(FLEET_KEY, draw);
+    const drawer = store.addDrawer(drawKey, draw);
     return () => {
       drawer.dispose();
       canvas.removeEventListener('pointermove', onMove);
@@ -265,7 +274,7 @@ export function FleetHeatmap({ topology: topo }: { topology: TopologyResponse })
       canvas.removeEventListener('pointerup', onUp);
       tip.hidden = true;
     };
-  }, [layout, navigate]);
+  }, [layout, navigate, state, drawKey]);
 
   return (
     <div ref={wrapRef} className="relative">

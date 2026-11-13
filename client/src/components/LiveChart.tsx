@@ -59,7 +59,7 @@ const fmtValue = (v: number): string => (Math.abs(v) >= 100 ? compact(v) : Strin
 const TIME_STEPS = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200].map((s) => s * 1000);
 
 /** Time-axis ticks on round local clock times (…:00, …:30), about one per 75 px. */
-function timeSplits(min: number, max: number, widthPx: number): number[] {
+export function timeSplits(min: number, max: number, widthPx: number): number[] {
   const want = Math.max(2, Math.floor(widthPx / 75));
   const step = TIME_STEPS.find((s) => (max - min) / s <= want) ?? TIME_STEPS[TIME_STEPS.length - 1]!;
   const tz = new Date(min).getTimezoneOffset() * 60_000; // align in local time: some zones are offset by 30 or 45 min

@@ -18,6 +18,8 @@ import {
   type IncidentDTO,
   type NodeStatus,
   type PresencePayload,
+  type PresenceUser,
+  type TimelineEntry,
   type SubAck,
   type SubReq,
   type TimeAck,
@@ -44,6 +46,8 @@ export class MockSocket implements BackendListener {
 
   private readonly handlers = new Map<string, Set<Handler>>();
   private readonly rooms = new Set<string>();
+  /** Incidents this socket announced itself in. */
+  private readonly presenceIn = new Set<string>();
   private readonly latencyMs: number;
   private unsubscribeBackend: (() => void) | null = null;
   private timers = new Set<ReturnType<typeof setTimeout>>();
@@ -133,9 +137,16 @@ export class MockSocket implements BackendListener {
       case 'time':
         reply({ t0: (payload as TimeReq).t0, ts: Date.now() } satisfies TimeAck);
         break;
-      case 'presence:hello':
-        reply({ users: [{ id: this.user.id, name: this.user.name }] } satisfies PresencePayload);
+      case 'presence:hello': {
+        const id = String((payload as { incidentId?: unknown })?.incidentId ?? '');
+        if (!this.rooms.has(room.incident(id))) {
+          reply({ users: [] } satisfies PresencePayload);
+          break;
+        }
+        this.presenceIn.add(id);
+        reply({ users: this.backend.presenceJoin(id, this, { id: this.user.id, name: this.user.name }) } satisfies PresencePayload);
         break;
+      }
       case 'client:stats':
         break;
     }
@@ -193,6 +204,7 @@ export class MockSocket implements BackendListener {
     if (!this.rooms.delete(r)) return;
     const parsed = parseRoom(r);
     if (parsed?.kind === 'fleet') this.forgetFleet(parsed.arg);
+    if (parsed?.kind === 'incident' && this.presenceIn.delete(parsed.arg)) this.backend.presenceLeave(parsed.arg, this);
   }
 
   private forgetFleet(team: string): void {
@@ -208,6 +220,8 @@ export class MockSocket implements BackendListener {
     const was = this.connected;
     this.connected = false;
     this.rooms.clear();
+    for (const id of this.presenceIn) this.backend.presenceLeave(id, this);
+    this.presenceIn.clear();
     this.sentCpu.fill(-1);
     this.sentMem.fill(-1);
     this.sentStatus.fill(-1);
@@ -270,6 +284,14 @@ export class MockSocket implements BackendListener {
       rows.push([i, cpu, mem, status]);
     }
     if (rows.length) this.send('fleet:delta', [frame.tSec, ...rows] as FleetDelta);
+  }
+
+  onNote(incidentId: string, entry: TimelineEntry): void {
+    if (this.connected && this.rooms.has(room.incident(incidentId))) this.send('incident:note', entry);
+  }
+
+  onPresence(incidentId: string, users: PresenceUser[]): void {
+    if (this.connected && this.rooms.has(room.incident(incidentId))) this.send('presence', { users });
   }
 
   onAlert(kind: 'new' | 'upd', alert: AlertDTO): void {

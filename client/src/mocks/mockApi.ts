@@ -47,6 +47,13 @@ function route(method: string, path: string, body: unknown, query: Query, token:
     if (path === '/incidents') return be.incidentList(user);
     if (seg[0] === 'incidents' && seg[1] && seg.length === 2) return be.incidentDetail(user, seg[1]);
     if (path === '/meta/stats') return be.frame?.stats ?? null;
+    if (path === '/replay') {
+      const services = (str(query.services) ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+      return be.replay(user, from, to, services);
+    }
+  }
+  if (method === 'POST' && seg[0] === 'incidents' && seg[1] && seg[2] === 'notes') {
+    return be.addNote(user, seg[1], String((body as { text?: unknown } | null)?.text ?? ''));
   }
   if (method === 'POST' && seg[0] === 'alerts' && seg[1] && seg[2] === 'ack') return be.ack(seg[1], user);
 
