@@ -8,6 +8,7 @@ import { errorHandler, notFound } from './errors';
 import { authRouter } from './routes/auth';
 import { ingestRouter } from './routes/ingest';
 import { topologyRouter } from './routes/topology';
+import { historyRouter } from './routes/history';
 
 export function createApp(pipeline: PipelineCore): express.Express {
   const app = express();
@@ -28,6 +29,7 @@ export function createApp(pipeline: PipelineCore): express.Express {
   });
   api.use('/auth', authRouter);
   api.use('/topology', topologyRouter(pipeline.registry));
+  api.use(historyRouter(pipeline.registry));
 
   app.use('/api/v1', api);
   app.use(notFound);
