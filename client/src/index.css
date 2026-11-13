@@ -1,0 +1,62 @@
+@import 'tailwindcss';
+
+/*
+ * Theme tokens (plan §9.4). Dark control-room theme:
+ *  - one neutral surface scale (bg → surface → raised), one line colour
+ *  - ONE accent, used only for interactive elements
+ *  - status colours are reserved strictly for status so they keep their meaning
+ */
+@theme {
+  --color-bg: #0b0e13;
+  --color-surface: #11151c;
+  --color-raised: #181d27;
+  --color-line: #252c39;
+  --color-fg: #e6e9ef;
+  --color-muted: #8d96a8;
+  --color-faint: #5d6678;
+
+  --color-accent: #6ea8fe;
+  --color-accent-strong: #8fbcff;
+  --color-accent-soft: #6ea8fe1f;
+
+  --color-ok: #3fb97f;
+  --color-warn: #e5a83b;
+  --color-crit: #ef5b5b;
+  --color-silent: #8a7fb5;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every metric uses tabular numerals so digits do not jitter as values change. */
+.metric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
