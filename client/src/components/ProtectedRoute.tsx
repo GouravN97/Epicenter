@@ -28,6 +28,7 @@ export function RequireRole({ roles }: { roles: Role[] }) {
   if (!hasRole(user, ...roles)) {
     return (
       <EmptyState
+        page
         icon={<ShieldAlert aria-hidden className="size-6" />}
         title="Not available for your role"
         body={`This page needs the ${roles.join(' or ')} role. You are signed in as ${user?.role ?? 'unknown'}.`}

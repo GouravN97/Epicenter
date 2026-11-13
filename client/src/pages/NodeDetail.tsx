@@ -206,7 +206,7 @@ export function NodeDetail() {
     return (
       <>
         {back}
-        <EmptyState
+        <EmptyState page
           icon={<SearchX aria-hidden className="size-6" />}
           title="Node not found"
           body={`"${id}" is not a registered node, or it belongs to a team you cannot see.`}

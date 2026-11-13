@@ -426,7 +426,7 @@ export function IncidentRoom() {
     return (
       <>
         {back}
-        <EmptyState
+        <EmptyState page
           icon={<SearchX aria-hidden className="size-6" />}
           title={loadError.status === 404 ? 'Incident not found' : 'Could not load the incident'}
           body={loadError.status === 404 ? 'It does not exist, or it does not involve any of your teams.' : loadError.message}
