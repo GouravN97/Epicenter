@@ -8,7 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { NodeStatus, SERVICES, SERVICE_BY_ID, isServiceId, type TopologyResponse } from '@epicenter/shared';
 import { FLEET_KEY, fleet as liveFleet, store, topology } from '../data/live';
 import type { FleetState } from '../data/fleetState';
-import { CPU_BUCKET_LABELS, LABEL_H, cpuBucket, hitTest, layoutHeatmap, type HeatGroupInput, type HeatLayout, type HexCell } from '../lib/heatmapLayout';
+import { CPU_BUCKET_LABELS, LABEL_H, cpuBucket, hitTest, layoutHeatmap, neighbour, type Direction, type HeatGroupInput, type HeatLayout, type HexCell } from '../lib/heatmapLayout';
 import { STATUS_VIEW, StatusIcon } from './StatusIcon';
 
 interface Palette {
@@ -95,6 +95,7 @@ export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEE
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tipRef = useRef<HTMLDivElement>(null);
+  const announceRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
 
   const groups = useMemo(() => groupsOf(topo), [topo]);
@@ -111,8 +112,9 @@ export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEE
   useEffect(() => {
     const canvas = canvasRef.current;
     const tip = tipRef.current;
+    const announce = announceRef.current;
     const ctx = canvas?.getContext('2d');
-    if (!canvas || !tip || !ctx || !layout) return;
+    if (!canvas || !tip || !announce || !ctx || !layout) return;
 
     const dpr = window.devicePixelRatio || 1;
     canvas.width = Math.round(layout.width * dpr);
@@ -263,15 +265,56 @@ export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEE
       }
     };
 
+    // Keyboard: Tab focuses the map, arrows move between nodes, Enter opens one. Each move is announced.
+    let keyCell: HexCell | null = null;
+    const say = (cell: HexCell) => {
+      const i = cell.nodeIdx;
+      const node = topology.nodeByIdx[i];
+      const svc = node && isServiceId(node[2]) ? SERVICE_BY_ID[node[2]].name : '';
+      const seen = state.seen[i] === 1;
+      const st = seen ? (STATUS_VIEW[state.status[i]!]?.label ?? '') : 'no data yet';
+      announce.textContent = `${node?.[1] ?? `node ${i}`}, ${svc}, ${st}${seen ? `, CPU ${state.cpu[i]} percent, memory ${state.mem[i]} percent` : ''}`;
+    };
+    const focusCell = (cell: HexCell | null) => {
+      if (!cell) return;
+      keyCell = cell;
+      setHover(cell);
+      say(cell);
+    };
+    const KEYS: Record<string, Direction> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+    const onKey = (e: KeyboardEvent) => {
+      const dir = KEYS[e.key];
+      if (dir) {
+        e.preventDefault();
+        focusCell(keyCell ? (neighbour(layout, keyCell, dir) ?? keyCell) : layout.cells[0]!);
+      } else if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault();
+        focusCell(e.key === 'Home' ? layout.cells[0]! : layout.cells.at(-1)!);
+      } else if ((e.key === 'Enter' || e.key === ' ') && keyCell) {
+        e.preventDefault();
+        open(keyCell);
+      } else if (e.key === 'Escape') {
+        setHover(null);
+      }
+    };
+    const onFocus = () => focusCell(keyCell && layout.cells.includes(keyCell) ? keyCell : layout.cells[0]!);
+    const onBlur = () => setHover(null);
+
     canvas.addEventListener('pointermove', onMove);
     canvas.addEventListener('pointerleave', onLeave);
     canvas.addEventListener('pointerup', onUp);
+    canvas.addEventListener('keydown', onKey);
+    canvas.addEventListener('focus', onFocus);
+    canvas.addEventListener('blur', onBlur);
     const drawer = store.addDrawer(drawKey, draw);
     return () => {
       drawer.dispose();
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerleave', onLeave);
       canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('keydown', onKey);
+      canvas.removeEventListener('focus', onFocus);
+      canvas.removeEventListener('blur', onBlur);
       tip.hidden = true;
     };
   }, [layout, navigate, state, drawKey]);
@@ -280,10 +323,13 @@ export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEE
     <div ref={wrapRef} className="relative">
       <canvas
         ref={canvasRef}
-        role="img"
-        aria-label={`Fleet heatmap: ${topo.nodes.length} nodes grouped by service. Fill shows CPU, outline shows status. Counts by status are listed below.`}
-        className="block w-full touch-manipulation"
+        role="application"
+        aria-roledescription="heatmap"
+        tabIndex={0}
+        aria-label={`Fleet heatmap: ${topo.nodes.length} nodes grouped by service. Fill shows CPU, outline shows status. Use the arrow keys to move between nodes and Enter to open one.`}
+        className="block w-full touch-manipulation rounded-sm"
       />
+      <div ref={announceRef} aria-live="polite" className="sr-only" />
       <div
         ref={tipRef}
         hidden

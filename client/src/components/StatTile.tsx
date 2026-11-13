@@ -22,13 +22,13 @@ export function StatTile({ label, value, unit, hint, trend, icon }: StatTileProp
         <span className="truncate">{label}</span>
       </div>
       <div className="mt-1.5 flex items-end justify-between gap-2">
-        <div className="min-w-0 truncate">
+        <div className="shrink-0 whitespace-nowrap">
           <span className="metric text-2xl font-semibold tracking-tight">{value}</span>
           {unit && <span className="ml-1 text-sm text-muted">{unit}</span>}
         </div>
         {/* Hidden on the narrowest tiles, where it would squeeze the number it supports. */}
         {trend && (
-          <div className="hidden sm:block">
+          <div className="hidden min-w-0 justify-end overflow-hidden sm:flex">
             <Sparkline values={trend} />
           </div>
         )}

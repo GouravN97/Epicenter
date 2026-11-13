@@ -38,6 +38,7 @@ import { useSocketEvent } from '../data/useSocketEvent';
 import { useTopoSnapshot, type TopoSnapshot } from '../data/useTopoSnapshot';
 import { api, HttpError } from '../lib/api';
 import { clockTime, duration } from '../lib/format';
+import { usePageTitle } from '../lib/usePageTitle';
 import { getSocket } from '../lib/socket';
 import { incidentView } from '../lib/topologyView';
 import { hasRole, useAuth } from '../state/authStore';
@@ -229,6 +230,7 @@ export function IncidentRoom() {
   // The store has the freshest header fields (it follows incident:upd); the detail has alerts and timeline.
   const incident: IncidentDTO | null = fromStore ?? detail;
   const open = incident?.state === 'open';
+  usePageTitle(incident ? `${open ? 'Open' : 'Resolved'} incident: ${incident.epicenter ?? 'locating'}` : 'Incident');
 
   // ---- detail, refetched (debounced) when the incident changes so new alerts reach the timeline
   const loadDetail = useCallback(async () => {

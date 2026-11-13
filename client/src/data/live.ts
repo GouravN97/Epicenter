@@ -173,8 +173,8 @@ export function initDataLayer(): void {
     socket.on('topo:tick', onTopoTick);
     socket.on('alert:new', (a) => useAlerts.getState().apply(a, true));
     socket.on('alert:upd', (a) => useAlerts.getState().apply(a, true));
-    socket.on('incident:new', (i) => useIncidents.getState().apply(i));
-    socket.on('incident:upd', (i) => useIncidents.getState().apply(i));
+    socket.on('incident:new', (i) => useIncidents.getState().apply(i, 'new'));
+    socket.on('incident:upd', (i) => useIncidents.getState().apply(i, 'upd'));
     socket.on('connect', () => syncClock(socket));
     if (socket.connected) syncClock(socket);
   });

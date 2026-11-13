@@ -41,6 +41,12 @@ describe('chaos runs in the mock', () => {
     expect(card.timeToDetectMs).toBeLessThan(15_000);
   });
 
+  it('slowing a service with tiny latency (cache) still names that service, not the gateway above it', () => {
+    const { inc, card } = runAndDetect('cache', 'slow-db');
+    expect(inc?.epicenter).toBe('cache');
+    expect(card.correct).toBe(true);
+  });
+
   it('a cache outage cascades into auth and catalog with the epicenter on cache', () => {
     const { inc, card } = runAndDetect('cache', 'cache-outage');
     expect(inc?.epicenter).toBe('cache');

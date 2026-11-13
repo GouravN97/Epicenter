@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cpuBucket, hitTest, layoutHeatmap, type HeatGroupInput } from './heatmapLayout';
+import { cpuBucket, hitTest, layoutHeatmap, neighbour, type HeatGroupInput } from './heatmapLayout';
 
 function fleetOf(counts: number[]): HeatGroupInput[] {
   let idx = 0;
@@ -52,5 +52,31 @@ describe('heatmap layout', () => {
 
   it('buckets CPU into five steps', () => {
     expect([0, 19.9, 20, 59, 80, 100, 140, -5].map(cpuBucket)).toEqual([0, 0, 1, 2, 4, 4, 4, 0]);
+  });
+});
+
+describe('heatmap keyboard navigation', () => {
+  it('reaches every node with the right arrow alone, in reading order', () => {
+    const l = layoutHeatmap(fleetOf(SEED), 820);
+    let c = l.cells[0]!;
+    const seen = [c.nodeIdx];
+    for (let k = 0; k < l.cells.length + 5; k++) {
+      const n = neighbour(l, c, 'right');
+      if (!n) break;
+      seen.push(n.nodeIdx);
+      c = n;
+    }
+    expect(seen).toEqual(l.cells.map((x) => x.nodeIdx));
+    expect(neighbour(l, l.cells.at(-1)!, 'right')).toBeNull();
+    expect(neighbour(l, l.cells[0]!, 'left')).toBeNull();
+  });
+
+  it('moves up and down between rows and back again', () => {
+    const l = layoutHeatmap(fleetOf(SEED), 820);
+    const top = l.cells[0]!;
+    const down = neighbour(l, top, 'down')!;
+    expect(down.y).toBeGreaterThan(top.y);
+    expect(neighbour(l, down, 'up')!.y).toBe(top.y);
+    expect(neighbour(l, top, 'up')).toBeNull();
   });
 });

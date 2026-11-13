@@ -104,7 +104,15 @@ export function AlertFeed() {
   );
 
   let body;
-  if (status === 'error') {
+  if (status === 'unavailable') {
+    body = (
+      <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
+        <BellOff aria-hidden className="size-6 text-faint" />
+        <p className="text-sm text-fg">Alerts are not available yet</p>
+        <p className="text-sm text-muted">This server does not provide alerts. Live metrics still work.</p>
+      </div>
+    );
+  } else if (status === 'error') {
     body = (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center text-sm text-muted">
         <p>{error ?? 'Could not load alerts'}</p>

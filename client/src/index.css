@@ -185,3 +185,22 @@ body {
   accent-color: var(--color-accent);
   height: 1.25rem;
 }
+
+/* Headings receive focus after navigation (for screen readers); no ring for that programmatic focus. */
+h1[tabindex='-1']:focus {
+  outline: none;
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.toast-in {
+  animation: toast-in 180ms ease-out;
+}

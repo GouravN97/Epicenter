@@ -4,9 +4,7 @@ import { io, type Socket } from 'socket.io-client';
 import { create } from 'zustand';
 import { NS_DASH, type DashC2S, type DashS2C } from '@epicenter/shared';
 import { API_URL, USE_MOCK } from './env';
-import { getMockBackend } from '../mocks/mockBackend';
-import { userFromToken } from '../mocks/mockApi';
-import { MockSocket } from '../mocks/mockSocket';
+import { useAuth } from '../state/authStore';
 
 /** Typed with the shared event maps, so event names and payload shapes are checked at compile time. */
 export type DashSocket = Socket<DashS2C, DashC2S>;
@@ -43,22 +41,35 @@ export function connectSocket(token: string): void {
   }
 
   setStatus('connecting');
-  let s: DashSocket;
   if (USE_MOCK) {
-    const mock = new MockSocket(getMockBackend(), userFromToken(token), token);
-    (window as unknown as { __epicenterMock?: MockSocket }).__epicenterMock = mock; // for `drop(ms)` from DevTools
-    s = mock as unknown as DashSocket;
-  } else {
-    s = io(API_URL + NS_DASH, { transports: ['websocket'], auth: { token }, autoConnect: false });
+    // The mock is loaded only in mock mode, so it never ships in a real build's main bundle.
+    const pending = token;
+    void Promise.all([import('../mocks/mockBackend'), import('../mocks/mockApi'), import('../mocks/mockSocket')]).then(([be, apiMod, sockMod]) => {
+      if (socket || useAuth.getState().token !== pending) return; // logged out or replaced meanwhile
+      const mock = new sockMod.MockSocket(be.getMockBackend(), apiMod.userFromToken(pending), pending);
+      (window as unknown as { __epicenterMock?: unknown }).__epicenterMock = mock; // for `drop(ms)` from DevTools
+      wire(mock as unknown as DashSocket);
+    });
+    return;
   }
+  wire(io(API_URL + NS_DASH, { transports: ['websocket'], auth: { token }, autoConnect: false }));
+}
 
+function wire(s: DashSocket): void {
   s.on('connect', () => setStatus(USE_MOCK ? 'mock' : 'live'));
   s.on('disconnect', (reason) => {
     // After an explicit disconnect (ours or the server's) socket.io does not retry.
     const final = reason === 'io client disconnect' || reason === 'io server disconnect';
     setStatus(final ? 'offline' : 'reconnecting');
   });
-  s.on('connect_error', () => setStatus(s.active ? 'reconnecting' : 'offline'));
+  s.on('connect_error', (err: Error) => {
+    // The server rejects an expired or revoked token at the handshake: the session is over.
+    if (err?.message === 'unauthorized') {
+      useAuth.getState().logout();
+      return;
+    }
+    setStatus(s.active ? 'reconnecting' : 'offline');
+  });
 
   setSocket(s);
   s.connect();

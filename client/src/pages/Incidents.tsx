@@ -74,7 +74,15 @@ export function Incidents() {
   );
 
   let body;
-  if (status === 'error') {
+  if (status === 'unavailable') {
+    body = (
+      <EmptyState
+        icon={<ShieldCheck aria-hidden className="size-6" />}
+        title="Incidents are not available yet"
+        body="This server does not correlate alerts into incidents yet. Live metrics, the topology and history still work."
+      />
+    );
+  } else if (status === 'error') {
     body = (
       <div className="flex min-h-48 flex-col items-center justify-center gap-2 text-sm text-muted">
         <p>{error}</p>

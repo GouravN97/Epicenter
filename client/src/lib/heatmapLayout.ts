@@ -107,3 +107,45 @@ export function hitTest(layout: HeatLayout, x: number, y: number): HexCell | nul
 /** CPU % → heat step 0–4 (20-point buckets). */
 export const cpuBucket = (cpu: number): number => Math.min(4, Math.max(0, Math.floor(cpu / 20)));
 export const CPU_BUCKET_LABELS = ['0–20', '20–40', '40–60', '60–80', '80–100'];
+
+export type Direction = 'left' | 'right' | 'up' | 'down';
+
+/**
+ * The cell keyboard navigation moves to from `from`. Left/right stay in the hexagon row and continue into
+ * the previous/next cell in reading order at a row's end (so every node is reachable with arrows alone);
+ * up/down pick the nearest cell in that direction, preferring the same column.
+ */
+export function neighbour(layout: HeatLayout, from: HexCell, dir: Direction): HexCell | null {
+  const cells = layout.cells;
+  const rowTol = layout.r * 0.5;
+  let best: HexCell | null = null;
+  let bestScore = Infinity;
+  for (const c of cells) {
+    if (c === from) continue;
+    const dx = c.x - from.x;
+    const dy = c.y - from.y;
+    let along: number;
+    let across: number;
+    if (dir === 'right' || dir === 'left') {
+      if (Math.abs(dy) > rowTol || (dir === 'right' ? dx <= 1 : dx >= -1)) continue;
+      along = Math.abs(dx);
+      across = Math.abs(dy);
+    } else {
+      if (dir === 'down' ? dy <= 1 : dy >= -1) continue;
+      along = Math.abs(dy);
+      across = Math.abs(dx);
+    }
+    const score = along + 2 * across;
+    if (score < bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+  // A gap wider than one hexagon means the next group: for left/right, fall back to reading order instead.
+  const w = Math.sqrt(3) * layout.r;
+  if ((dir === 'left' || dir === 'right') && (!best || Math.abs(best.x - from.x) > 1.6 * w)) {
+    const i = cells.indexOf(from);
+    return cells[dir === 'right' ? i + 1 : i - 1] ?? null;
+  }
+  return best;
+}

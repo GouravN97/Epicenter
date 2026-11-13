@@ -1,14 +1,15 @@
 // Alerts are low-frequency lifecycle events, so they live in ordinary UI state (unlike telemetry).
 import { create } from 'zustand';
 import type { AlertDTO } from '@epicenter/shared';
-import { api } from '../lib/api';
+import { api, HttpError } from '../lib/api';
 
 const MAX_ALERTS = 500;
 
 interface AlertState {
   /** Newest first, unique by id. */
   alerts: AlertDTO[];
-  status: 'idle' | 'loading' | 'ready' | 'error';
+  /** `unavailable`: the server has no such endpoint yet (404); not an error the user can fix. */
+  status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable';
   error: string | null;
   /** Ids that arrived live in the last moments, for the brief highlight. */
   fresh: ReadonlySet<string>;
@@ -45,6 +46,7 @@ export const useAlerts = create<AlertState>((set, get) => ({
       // Merge, not replace: live events may have arrived while the request was in flight.
       set((s) => ({ alerts: merge(s.alerts, unwrap(res)), status: 'ready', error: null }));
     } catch (err) {
+      if (err instanceof HttpError && err.status === 404) return set({ status: 'unavailable', error: null });
       set((s) => ({ status: s.alerts.length ? 'ready' : 'error', error: err instanceof Error ? err.message : 'Could not load alerts' }));
     }
   },

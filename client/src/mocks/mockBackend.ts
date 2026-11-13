@@ -210,7 +210,12 @@ export class MockBackend {
         const metric = WATCHED[k]!;
         const j = i * WATCHED.length + k;
         const key = `${node.nodeId}|${metric}|zscore`;
-        const hit = p[metric] - base[metric] > MIN_DELTA[metric];
+        // Latency is judged relative to its baseline, like the real z-score rule, so a 1 ms cache that
+        // slows to 28 ms alerts while a 40 ms gateway wobbling by 5 ms does not.
+        const hit =
+          metric === 'lat'
+            ? p.lat > 2 * base.lat && p.lat - base.lat > 5
+            : p[metric] - base[metric] > MIN_DELTA[metric];
         if (hit) {
           this.okStreak[j] = 0;
           if (this.streak[j]! < 0xffff) this.streak[j]!++;
@@ -220,7 +225,8 @@ export class MockBackend {
           const existing = this.firing.get(key);
           if (!existing) {
             const msg = `${metric} ${p[metric]}${METRIC_UNITS[metric]} on ${node.nodeId}, expected about ${base[metric]}${METRIC_UNITS[metric]}`;
-            this.fire(tSec, node, key, metric, 'zscore', severity, p[metric], round1(base[metric] + MIN_DELTA[metric]), msg);
+            const threshold = metric === 'lat' ? round1(Math.max(2 * base.lat, base.lat + 5)) : round1(base[metric] + MIN_DELTA[metric]);
+            this.fire(tSec, node, key, metric, 'zscore', severity, p[metric], threshold, msg);
           } else if (severity === 'crit' && existing.severity === 'warn') {
             existing.severity = 'crit';
             existing.value = p[metric];

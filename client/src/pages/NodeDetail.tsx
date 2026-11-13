@@ -11,6 +11,7 @@ import { fleet, topology as registry } from '../data/live';
 import { useRoom } from '../data/useRoom';
 import { useSeries, type UseSeries } from '../data/useSeries';
 import { clockTime, duration } from '../lib/format';
+import { usePageTitle } from '../lib/usePageTitle';
 import { useAlerts } from '../state/alertStore';
 
 const RANGES = [
@@ -163,6 +164,7 @@ function AlertHistory({ alerts }: { alerts: AlertDTO[] }) {
 
 export function NodeDetail() {
   const { id = '' } = useParams();
+  usePageTitle(id);
   const topo = useTopology();
   const nodeIdx = topo ? registry.idxByNodeId.get(id) : undefined;
   const node = nodeIdx !== undefined ? registry.nodeByIdx[nodeIdx] : undefined;

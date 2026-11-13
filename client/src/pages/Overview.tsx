@@ -65,7 +65,8 @@ export function Overview() {
 
   const s = useSummary();
   const openIncidents = useIncidents((st) => selectOpenIncidents(st).length);
-  const incidentsReady = useIncidents((st) => st.status === 'ready');
+  const incidentsStatus = useIncidents((st) => st.status);
+  const incidentsReady = incidentsStatus === 'ready';
   const [topoError, setTopoError] = useState(false);
   const giveUp = useCallback(() => setTopoError(true), []);
 
@@ -92,7 +93,17 @@ export function Overview() {
         <StatTile
           label="Open incidents"
           value={incidentsReady ? String(openIncidents) : '–'}
-          hint={!incidentsReady ? 'Loading' : openIncidents ? 'See the banner above' : 'None right now'}
+          hint={
+            incidentsStatus === 'unavailable'
+              ? 'Not available on this server yet'
+              : incidentsStatus === 'error'
+                ? 'Could not load'
+                : !incidentsReady
+                  ? 'Loading'
+                  : openIncidents
+                    ? 'See the banner above'
+                    : 'None right now'
+          }
         />
       </div>
 

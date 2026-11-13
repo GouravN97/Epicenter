@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { USE_MOCK } from '../lib/env';
+import { usePageTitle } from '../lib/usePageTitle';
 import { useAuth } from '../state/authStore';
 
 // Seed accounts from plan §6.3. Quick-fill sets the email only; passwords live in .env, never in the repo.
@@ -11,6 +12,7 @@ const SEED = [
 ];
 
 export function Login() {
+  usePageTitle('Sign in');
   const status = useAuth((s) => s.status);
   const login = useAuth((s) => s.login);
   const navigate = useNavigate();
