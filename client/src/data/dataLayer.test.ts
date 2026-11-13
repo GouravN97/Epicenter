@@ -222,10 +222,10 @@ describe('series session: history + live + reconnect', () => {
       store,
       rooms,
       now: w.now,
-      fetchHistory: (_room: string, from: number, to: number): Promise<ColumnarSeries> => {
+      fetchHistory: (_room: string, from: number, to: number, _signal?: AbortSignal, resolution?: string): Promise<ColumnarSeries> => {
         fetches++;
         ranges.push([from, to]);
-        const res = w.backend.nodeSeries(admin, node.nodeId, from, to); // computed at request time
+        const res = w.backend.nodeSeries(admin, node.nodeId, from, to, resolution); // computed at request time
         return hold ? new Promise((resolve) => pending.push(() => resolve(res))) : Promise.resolve(res);
       },
     };
@@ -314,6 +314,46 @@ describe('series session: history + live + reconnect', () => {
     await tick();
     expect(s.w.unsubs).toEqual([[s.key]]);
     expect(s.store.get(s.key)).toBeUndefined();
+  });
+
+  it('polls a long range as 1-minute points in its own buffer, with no live subscription', async () => {
+    const s = setup();
+    const HOUR = 60 * 60_000;
+    const session = openSeries(s.deps, s.key, HOUR, { pollMs: 3_600_000 });
+    const short = openSeries(s.deps, s.key, RANGE);
+    await tick();
+    expect([session.res, session.live, session.key]).toEqual(['1m', false, `${s.key}#1m`]);
+    expect(session.buffer).not.toBe(short.buffer);
+    expect(s.w.subs).toEqual([[s.key]]); // only the short window subscribed
+
+    const t = [...session.buffer.times()];
+    expect(t.length).toBeGreaterThanOrEqual(60);
+    expect(t.every((x, i) => x % 60_000 === 0 && (i === 0 || x - t[i - 1]! === 60_000))).toBe(true);
+
+    s.w.at(T0 + 150); // live points reach only the 1-second buffer
+    expect([...session.buffer.times()]).toEqual(t);
+    await session.poll();
+    expect(session.buffer.lastT).toBe(Math.floor(((T0 + 150) * 1000) / 60_000) * 60_000);
+    s.expectMatches(session.buffer, s.w.backend.nodeSeries(admin, s.key.slice(5), s.w.now() - HOUR - 150_000, s.w.now(), '1m'));
+    session.close();
+    short.close();
+  });
+
+  it('loads a window that ends in the past for the baseline overlay', async () => {
+    const s = setup();
+    const HOUR = 60 * 60_000;
+    const session = openSeries(s.deps, s.key, RANGE, { offsetMs: HOUR, pollMs: 3_600_000 });
+    await tick();
+    expect([session.res, session.live, session.key]).toEqual(['1s', false, `${s.key}#ago${HOUR}`]);
+    expect(s.w.subs).toEqual([]);
+    expect(session.buffer.lastT).toBe(s.w.now() - HOUR);
+    expect(session.buffer.length).toBe(301);
+
+    s.w.at(T0 + 45);
+    await session.poll(); // the window slides forward with the clock
+    expect(session.buffer.lastT).toBe(s.w.now() - HOUR);
+    expect(session.buffer.length).toBe(346);
+    session.close();
   });
 
   it('surfaces a failed history load and recovers on reload', async () => {

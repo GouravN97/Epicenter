@@ -66,8 +66,8 @@ function historyPath(roomName: string): string {
 export const seriesDeps: SeriesDeps = {
   store,
   rooms,
-  fetchHistory: (roomName, from, to, signal) =>
-    api.get<ColumnarSeries>(historyPath(roomName), { from: Math.floor(from), to: Math.ceil(to), res: 'auto' }, signal),
+  fetchHistory: (roomName, from, to, signal, res) =>
+    api.get<ColumnarSeries>(historyPath(roomName), { from: Math.floor(from), to: Math.ceil(to), res }, signal),
   now: () => clock.liveNow(),
   ready: () => topology.ready(),
 };

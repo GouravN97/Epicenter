@@ -30,6 +30,11 @@
   --color-heat-4: #6da7ec;
   --color-heat-5: #b7d3f6;
 
+  /* Chart series: categorical slots 1 and 2, validated as a pair on --color-surface (CVD and contrast).
+     A chart never has more than two series; status colours are never used for a series. */
+  --color-series-1: #3987e5;
+  --color-series-2: #d95926;
+
   --color-ok: #3fb97f;
   --color-warn: #e5a83b;
   --color-crit: #ef5b5b;
@@ -83,4 +88,37 @@ body {
 }
 .fresh-row {
   animation: fresh-row 2.5s ease-out;
+}
+
+/* uPlot legend, restyled for the dark theme. It doubles as the hover readout: values follow the cursor. */
+.uplot {
+  font-family: var(--font-sans);
+}
+.uplot .u-legend {
+  margin-top: 2px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+.uplot .u-legend .u-series {
+  margin-right: 14px;
+}
+.uplot .u-legend .u-series > * {
+  padding: 2px 2px;
+}
+.uplot .u-legend th {
+  font-weight: 400;
+}
+.uplot .u-legend .u-value {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--color-fg);
+}
+.uplot .u-legend .u-marker {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+}
+.uplot .u-cursor-pt {
+  border-color: var(--color-surface) !important;
 }
