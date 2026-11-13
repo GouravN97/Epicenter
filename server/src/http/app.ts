@@ -3,10 +3,12 @@ import helmet from 'helmet';
 import cors from 'cors';
 import { SERVICES, buildFleet } from '@epicenter/shared';
 import { config } from '../config';
+import type { PipelineCore } from '../pipeline/ingest';
 import { errorHandler, notFound } from './errors';
 import { authRouter } from './routes/auth';
+import { ingestRouter } from './routes/ingest';
 
-export function createApp(): express.Express {
+export function createApp(pipeline: PipelineCore): express.Express {
   const app = express();
   app.disable('x-powered-by');
   // Behind Render's proxy in production: needed so the login rate limit keys on the client IP.
@@ -16,7 +18,8 @@ export function createApp(): express.Express {
   app.use(cors({ origin: config.clientOrigin, credentials: false, maxAge: 600 }));
 
   const api = express.Router();
-  // /ingest (A4) mounts its own 256 kB parser before this one; everything else is small JSON.
+  // /ingest checks the agent key first, then parses up to 256 kB. Everything else is small JSON.
+  api.use('/ingest', ingestRouter(pipeline));
   api.use(express.json({ limit: '32kb' }));
 
   api.get('/health', (_req, res) => {
