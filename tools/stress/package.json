@@ -1,0 +1,14 @@
+{
+  "name": "@epicenter/stress",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@epicenter/shared": "*",
+    "tsx": "^4.23.15"
+  }
+}
