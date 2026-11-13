@@ -12,14 +12,17 @@ import {
   type ClientStats,
   type DashC2S,
   type DashS2C,
+  type IncidentDTO,
   type PipelineStats,
   type Team,
+  type TimelineEntry,
 } from '@epicenter/shared';
 import { config } from '../config';
 import { verifyToken } from '../lib/jwt';
 import type { Pipeline } from '../pipeline';
 import { Broadcaster } from './broadcaster';
-import { CallLimiter, expandRooms, planSub, type RoomContext } from './rooms';
+import { Presence } from './presence';
+import { CallLimiter, canJoin, expandRooms, planSub, type RoomContext } from './rooms';
 
 interface SocketData {
   user: AuthClaims;
@@ -39,6 +42,9 @@ export interface Realtime {
   setChaosSnapshot(fn: () => ChaosActiveRun[]): void;
   /** Sends an alert event to the alerts:<team> room of the alert's team. */
   emitAlert(event: 'alert:new' | 'alert:upd', a: AlertDTO): void;
+  /** Sends incident:new/upd to alerts:<team> for every affected team and to incident:<id>. */
+  emitIncident(event: 'incident:new' | 'incident:upd', dto: IncidentDTO, teams: Team[]): void;
+  emitNote(incidentId: string, entry: TimelineEntry): void;
   /** Dashboard sockets and their latest client:stats. */
   dashStats(): { sockets: number; rooms: number; clientE2eP95: number[] };
   close(): Promise<void>;
@@ -61,6 +67,7 @@ export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: 
 
   let incidentTeams: (id: string) => Team[] | undefined = () => undefined;
   let chaosSnapshot: () => ChaosActiveRun[] = () => [];
+  const presence = new Presence();
   const ctx: RoomContext = {
     nodeTeam: (id) => pipeline.registry.get(id)?.team,
     incidentTeams: (id) => incidentTeams(id),
@@ -102,7 +109,15 @@ export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: 
 
     socket.on('unsub', (req, ack) => {
       const rooms = Array.isArray(req?.rooms) ? expandRooms(user, req.rooms) : [];
-      if (socket.data.limiter.allow(Date.now())) for (const r of rooms) if (r !== socket.id) void socket.leave(r);
+      if (socket.data.limiter.allow(Date.now())) {
+        for (const r of rooms) {
+          if (r === socket.id) continue;
+          void socket.leave(r);
+          const p = parseRoom(r);
+          const left = p?.kind === 'incident' ? presence.leave(p.arg, socket.id) : null;
+          if (left) dash.to(r).emit('presence', { users: left });
+        }
+      }
       if (typeof ack === 'function') ack({ ok: true });
     });
 
@@ -116,9 +131,25 @@ export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: 
       }
     });
 
-    // Presence is task A9; answer so clients do not wait on the ack.
-    socket.on('presence:hello', (_req, ack) => {
-      if (typeof ack === 'function') ack({ users: [] });
+    // Presence: joining an incident room via hello announces the user to everyone else in it.
+    socket.on('presence:hello', (req, ack) => {
+      const id = typeof req?.incidentId === 'string' ? req.incidentId : '';
+      const r = room.incident(id);
+      if (!canJoin(user, r, ctx)) {
+        if (typeof ack === 'function') ack({ users: [] });
+        return;
+      }
+      if (!socket.rooms.has(r)) {
+        if (joinedRooms().size >= SOCKET_MAX_ROOMS) return typeof ack === 'function' ? ack({ users: [] }) : undefined;
+        void socket.join(r);
+      }
+      const users = presence.join(id, socket.id, { id: user.sub, name: user.name });
+      dash.to(r).emit('presence', { users });
+      if (typeof ack === 'function') ack({ users });
+    });
+
+    socket.on('disconnect', () => {
+      for (const id of presence.leaveAll(socket.id)) dash.to(room.incident(id)).emit('presence', { users: presence.users(id) });
     });
   });
 
@@ -136,6 +167,13 @@ export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: 
     },
     emitAlert(event, a) {
       dash.to(room.alerts(a.team)).emit(event, a);
+    },
+    emitIncident(event, dto, teams) {
+      // Every affected team's alert room plus the incident's own room; Socket.IO sends once per socket.
+      dash.to([...teams.map((t) => room.alerts(t)), room.incident(dto.id)]).emit(event, dto);
+    },
+    emitNote(incidentId, entry) {
+      dash.to(room.incident(incidentId)).emit('incident:note', entry);
     },
     dashStats() {
       const sockets = [...dash.sockets.values()] as DashSocket[];
