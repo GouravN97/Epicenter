@@ -142,7 +142,7 @@ Fill in `.env` (one file in the repository root, read by every part):
 | `JWT_SECRET` | Any long random string, e.g. `openssl rand -hex 32` |
 | `SIM_KEY` | Any long random string; the simulator's agent key |
 | `SEED_ADMIN_PASSWORD`, `SEED_SRE_PASSWORD`, `SEED_VIEWER_PASSWORD` | Passwords for the three demo accounts |
-| `CLIENT_ORIGIN` | Where the browser app runs; `http://localhost:5173` locally |
+| `CLIENT_ORIGIN` | Where the browser app runs; `http://localhost:5173` locally. Comma-separate several origins, e.g. the hosted URL and localhost |
 | `VITE_API_URL` | Where the browser finds the API; `http://localhost:4000` locally |
 | `EMBEDDED_SIM` | `true` to run the simulator inside the server process (used when hosted) |
 
@@ -175,6 +175,27 @@ npm run dev:mock -w @epicenter/client     # http://localhost:5173, any password 
 The mock runs the same contract (REST shapes, socket events and rooms, access rules) against a deterministic
 simulated fleet, schedules a background fault every four minutes, and supports every Chaos Lab scenario.
 Add `?mockNodes=500` to the URL to try a larger fleet.
+
+### Deploy
+
+The web app is a static build on **Vercel**; the API runs on **Render**, because Socket.IO needs a
+long-running process, which Vercel's serverless functions are not; the database is **MongoDB Atlas**. With
+`EMBEDDED_SIM=true` the simulator runs inside the API process and sends to it over loopback, through the same
+ingest API, agent keys and `/control` namespace as `npm run sim`, so the hosted app has live data and a
+working Chaos Lab.
+
+1. **Atlas:** create a free cluster and a database user, allow network access from `0.0.0.0/0` (Render's
+   outgoing addresses change), and copy the connection string with `/epicenter` as the database name.
+2. **Seed it** from your machine with the `SIM_KEY` you will give Render (the embedded agents use it):
+   `MONGODB_URI='<atlas uri>' SIM_KEY='<key>' npm run seed`
+3. **Render:** New → Blueprint → this repository. [`render.yaml`](render.yaml) defines the service; enter
+   `MONGODB_URI`, `JWT_SECRET`, `SIM_KEY` and `CLIENT_ORIGIN` when asked.
+4. **Vercel:** import the repository with **Root Directory** `client` ([`client/vercel.json`](client/vercel.json)
+   sets the rest) and set `VITE_API_URL` to the Render URL. It is built into the bundle, so changing it needs
+   a redeploy.
+5. Set `CLIENT_ORIGIN` on Render to the Vercel URL (add `,http://localhost:5173` to use a local client too).
+
+Render's free instance sleeps when idle: open the API URL a minute before a demo.
 
 ## How data is generated and ingested
 
