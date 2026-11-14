@@ -4,6 +4,7 @@
 //   outline = status (amber warning, red critical with a centre mark), stripes = silent
 // The canvas is drawn from the fleet typed arrays inside the shared animation-frame loop, so a
 // fleet:delta costs no React work. Hover and tooltip are handled imperatively for the same reason.
+import { hotkey } from '../lib/shortcuts';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { NodeStatus, SERVICES, SERVICE_BY_ID, isServiceId, type TopologyResponse } from '@epicenter/shared';
@@ -330,6 +331,7 @@ export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEE
         role="application"
         aria-roledescription="heatmap"
         tabIndex={0}
+        {...hotkey('f', 'focus')}
         aria-label={`Fleet heatmap: ${topo.nodes.length} nodes grouped by service. Fill shows CPU, outline shows status. Use the arrow keys to move between nodes and Enter to open one.`}
         className="block w-full touch-manipulation rounded-sm"
       />

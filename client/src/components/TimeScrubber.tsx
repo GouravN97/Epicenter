@@ -1,6 +1,7 @@
 // Incident time scrubber (plan §9.3): a range over the recording with alert markers, play/pause,
 // 1× / 4× / 16× and Go Live. The thumb and the time label follow the clock imperatively from the replay
 // loop (`ScrubberHandle.update`), so playback does not re-render React sixty times a second.
+import { hotkey } from '../lib/shortcuts';
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { Pause, Play, Radio, RotateCcw } from 'lucide-react';
 import type { AlertDTO } from '@epicenter/shared';
@@ -67,28 +68,29 @@ export const TimeScrubber = forwardRef<ScrubberHandle, TimeScrubberProps>(functi
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         {replay && playing ? (
-          <button type="button" className={button} onClick={p.onPause} disabled={!p.ready}>
+          <button type="button" className={button} onClick={p.onPause} disabled={!p.ready} {...hotkey('p')}>
             <Pause aria-hidden className="size-4" />
             Pause
           </button>
         ) : (
-          <button type="button" className={button} onClick={p.onPlay} disabled={!p.ready}>
+          <button type="button" className={button} onClick={p.onPlay} disabled={!p.ready} {...hotkey('p')}>
             <Play aria-hidden className="size-4" />
             {replay ? 'Play' : 'Replay'}
           </button>
         )}
-        <button type="button" className={button} onClick={p.onRestart} disabled={!p.ready} title="Back to the start of the recording">
+        <button type="button" className={button} onClick={p.onRestart} disabled={!p.ready} title="Back to the start of the recording" {...hotkey('s')}>
           <RotateCcw aria-hidden className="size-4" />
           <span className="sr-only sm:not-sr-only">Start</span>
         </button>
         <div role="radiogroup" aria-label="Playback speed" className="segmented flex rounded-md border border-line p-0.5">
-          {SPEEDS.map((s) => (
+          {SPEEDS.map((s, i) => (
             <button
               key={s}
               type="button"
               role="radio"
               aria-checked={speed === s}
               onClick={() => p.onSpeed(s)}
+              {...hotkey(String(i + 1))}
               className="segment metric px-2.5 py-1 text-sm"
             >
               {s}×
@@ -113,6 +115,7 @@ export const TimeScrubber = forwardRef<ScrubberHandle, TimeScrubberProps>(functi
             <button
               type="button"
               onClick={p.onGoLive}
+              {...hotkey('l')}
               disabled={!replay}
               className="btn-primary disabled:bg-raised disabled:text-muted"
             >

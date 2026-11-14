@@ -1,6 +1,7 @@
 import { Siren } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { clockTime } from '../lib/format';
+import { hotkey } from '../lib/shortcuts';
 import { selectOpenIncidents, useIncidents } from '../state/incidentStore';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -31,6 +32,7 @@ export function IncidentBanner() {
       </div>
       <Link
         to={`/incidents/${inc.id}`}
+        {...hotkey('i')}
         className="btn bg-surface px-3 text-fg"
       >
         Open incident

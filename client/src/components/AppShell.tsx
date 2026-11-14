@@ -1,6 +1,8 @@
 import { useDisplay } from '../state/displayStore';
 import { ControlShell } from './shell/ControlShell';
 import { GlassShell } from './shell/GlassShell';
+import { Shortcuts } from './Shortcuts';
+import { TourGuide } from './TourGuide';
 
 /**
  * The frame around every signed-in page. Each display mode has its own shell (navigation, toolbar,
@@ -9,5 +11,11 @@ import { GlassShell } from './shell/GlassShell';
  */
 export function AppShell() {
   const mode = useDisplay((s) => s.mode);
-  return mode === 'glass' ? <GlassShell /> : <ControlShell />;
+  return (
+    <>
+      {mode === 'glass' ? <GlassShell /> : <ControlShell />}
+      <TourGuide />
+      <Shortcuts />
+    </>
+  );
 }

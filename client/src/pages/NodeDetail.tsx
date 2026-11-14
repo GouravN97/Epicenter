@@ -1,15 +1,17 @@
+import { hotkey } from '../lib/shortcuts';
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, BellOff, CircleCheck, OctagonAlert, SearchX, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, BellOff, CircleCheck, Download, OctagonAlert, SearchX, TriangleAlert } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
-import { METRICS, SERVICE_BY_ID, isServiceId, room, type AlertDTO } from '@epicenter/shared';
+import { METRICS, SERVICE_BY_ID, isServiceId, room, type AlertDTO, type MetricName } from '@epicenter/shared';
 import { EmptyState } from '../components/EmptyState';
 import { LiveChart, type ChartGhost, type ChartSeries } from '../components/LiveChart';
 import { Panel } from '../components/Panel';
 import { STATUS_VIEW, StatusIcon } from '../components/StatusIcon';
 import { useTopology } from '../data/hooks';
-import { fleet, topology as registry } from '../data/live';
+import { clock, fleet, topology as registry } from '../data/live';
 import { useRoom } from '../data/useRoom';
 import { useSeries, type UseSeries } from '../data/useSeries';
+import { METRIC_LABELS, buildSeriesExport, downloadJson, exportFilename, parseMetricSelection, toggleMetric } from '../lib/dataExport';
 import { clockTime, duration } from '../lib/format';
 import { usePageTitle } from '../lib/usePageTitle';
 import { useAlerts } from '../state/alertStore';
@@ -23,10 +25,22 @@ const RANGES = [
 const HOUR = 60 * 60_000;
 const col = (m: (typeof METRICS)[number]) => METRICS.indexOf(m);
 
+/** Shown until the user chooses otherwise. Disk and requests are one click away. */
+const DEFAULT_METRICS: readonly MetricName[] = ['cpu', 'mem', 'netIn', 'netOut', 'lat', 'err'];
+const METRICS_KEY = 'epicenter.nodeMetrics';
+
+function readMetrics(): MetricName[] {
+  try {
+    return parseMetricSelection(localStorage.getItem(METRICS_KEY), DEFAULT_METRICS);
+  } catch {
+    return [...DEFAULT_METRICS];
+  }
+}
+
 interface ChartDef {
   title: string;
   unit: string;
-  series: ChartSeries[];
+  series: (ChartSeries & { metric: MetricName })[];
   yMax?: number;
   yFloor?: number;
 }
@@ -37,22 +51,32 @@ const CHARTS: ChartDef[] = [
     unit: '%',
     yMax: 100,
     series: [
-      { label: 'CPU', column: col('cpu'), colorVar: '--color-series-1' },
-      { label: 'Memory', column: col('mem'), colorVar: '--color-series-2' },
+      { metric: 'cpu', label: 'CPU', column: col('cpu'), colorVar: '--color-series-1' },
+      { metric: 'mem', label: 'Memory', column: col('mem'), colorVar: '--color-series-2' },
     ],
   },
-  { title: 'Latency', unit: 'ms', yFloor: 20, series: [{ label: 'Latency', column: col('lat'), colorVar: '--color-series-1' }] },
-  { title: 'Errors', unit: '%', yFloor: 2, series: [{ label: 'Error rate', column: col('err'), colorVar: '--color-series-1' }] },
+  { title: 'Latency', unit: 'ms', yFloor: 20, series: [{ metric: 'lat', label: 'Latency', column: col('lat'), colorVar: '--color-series-1' }] },
+  { title: 'Errors', unit: '%', yFloor: 2, series: [{ metric: 'err', label: 'Error rate', column: col('err'), colorVar: '--color-series-1' }] },
   {
     title: 'Network',
     unit: 'kB/s',
     yFloor: 100,
     series: [
-      { label: 'In', column: col('netIn'), colorVar: '--color-series-1' },
-      { label: 'Out', column: col('netOut'), colorVar: '--color-series-2' },
+      { metric: 'netIn', label: 'In', column: col('netIn'), colorVar: '--color-series-1' },
+      { metric: 'netOut', label: 'Out', column: col('netOut'), colorVar: '--color-series-2' },
     ],
   },
+  { title: 'Requests', unit: 'req/s', yFloor: 10, series: [{ metric: 'rps', label: 'Requests', column: col('rps'), colorVar: '--color-series-1' }] },
+  { title: 'Disk', unit: '%', yMax: 100, series: [{ metric: 'disk', label: 'Disk', column: col('disk'), colorVar: '--color-series-1' }] },
 ];
+
+/** The charts for a metric selection: unselected lines are dropped, and a chart with none left is too. */
+const chartsFor = (metrics: readonly MetricName[]): ChartDef[] =>
+  CHARTS.map((c) => {
+    const series = c.series.filter((s) => metrics.includes(s.metric));
+    // Half of a paired chart is named after the line that is left ("CPU", not "CPU and memory").
+    return { ...c, series, title: series.length === 1 && c.series.length > 1 ? METRIC_LABELS[series[0]!.metric] : c.title };
+  }).filter((c) => c.series.length > 0);
 
 /** Node status from the fleet state, refreshed once a second. −1 = no data yet. */
 function useNodeStatus(nodeIdx: number | undefined): number {
@@ -172,6 +196,8 @@ export function NodeDetail() {
 
   const [rangeId, setRangeId] = useState<(typeof RANGES)[number]['id']>('15m');
   const [compare, setCompare] = useState(false);
+  const [metrics, setMetrics] = useState(readMetrics);
+  const charts = useMemo(() => chartsFor(metrics), [metrics]);
   const rangeMs = RANGES.find((r) => r.id === rangeId)!.ms;
 
   const nodeRoom = node ? room.node(id) : null;
@@ -184,6 +210,33 @@ export function NodeDetail() {
   const alerts = useMemo(() => allAlerts.filter((a) => a.nodeId === id).slice(0, 50), [allAlerts, id]);
 
   const ghost: ChartGhost | null = compare && past.buffer && past.key ? { buffer: past.buffer, drawKey: past.key, offsetMs: HOUR, column: 0 } : null;
+
+  function onToggleMetric(m: MetricName) {
+    const next = toggleMetric(metrics, m);
+    setMetrics(next);
+    try {
+      localStorage.setItem(METRICS_KEY, JSON.stringify(next));
+    } catch {
+      /* not remembered */
+    }
+  }
+
+  /** Saves what the charts are showing: the selected metrics over the selected range. */
+  function onExport() {
+    if (!node || !main.buffer) return;
+    const buffer = main.buffer;
+    const now = clock.liveNow();
+    const data = buildSeriesExport({
+      node: { id, service: node[2], team: service?.team ?? null, region: node[3], az: node[4] },
+      resolution: main.res === '1m' ? '1m' : '1s',
+      rangeLabel: RANGES.find((r) => r.id === rangeId)!.label,
+      metrics,
+      times: buffer.times(),
+      column: (m) => buffer.column(col(m)),
+      now,
+    });
+    downloadJson(exportFilename(id, now), data);
+  }
 
   const back = (
     <Link to="/" className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted hover:text-fg">
@@ -236,9 +289,11 @@ export function NodeDetail() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div data-tour="node-controls" className="flex flex-wrap items-center gap-3">
           <button
             type="button"
+            data-tour="node-compare"
+            {...hotkey('c')}
             aria-pressed={compare}
             onClick={() => setCompare((c) => !c)}
             className={`btn px-3 ${compare ? 'border-accent bg-accent-soft text-accent-strong' : 'text-muted hover:text-fg'}`}
@@ -246,13 +301,14 @@ export function NodeDetail() {
             Compare with 1 h ago
           </button>
           <div role="radiogroup" aria-label="Time range" className="segmented flex rounded-md border border-line p-0.5">
-            {RANGES.map((r) => (
+            {RANGES.map((r, i) => (
               <button
                 key={r.id}
                 type="button"
                 role="radio"
                 aria-checked={rangeId === r.id}
                 onClick={() => setRangeId(r.id)}
+                {...hotkey(String(i + 1))}
                 className="segment metric px-2.5 py-1 text-sm"
               >
                 {r.label}
@@ -262,19 +318,47 @@ export function NodeDetail() {
         </div>
       </header>
 
+      <div data-tour="node-metrics" className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span id="metric-filter" className="text-xs text-muted">
+          Metrics
+        </span>
+        <div role="group" aria-labelledby="metric-filter" className="flex flex-wrap gap-1.5">
+          {METRICS.map((m) => {
+            const on = metrics.includes(m);
+            return (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={on}
+                onClick={() => onToggleMetric(m)}
+                className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                  on ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-muted hover:text-fg'
+                }`}
+              >
+                {METRIC_LABELS[m]}
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" onClick={onExport} disabled={!main.buffer || main.state.status !== 'ready'} {...hotkey('e')} className="btn ml-auto text-muted hover:text-fg" title="Save the selected metrics over this range as a .json file (E)">
+          <Download aria-hidden className="size-4" />
+          Export JSON
+        </button>
+      </div>
+
       <p className="mb-3 text-xs text-muted">
         {main.live
           ? 'Live: 1-second points, history and the live stream merged by timestamp.'
           : 'Long range: 1-minute averages, refreshed every 30 seconds.'}
       </p>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {CHARTS.map((def) => (
+      <div data-tour="node-charts" className="grid gap-4 lg:grid-cols-2">
+        {charts.map((def) => (
           <ChartCard key={def.title} def={def} main={main} ghost={ghost} rangeMs={rangeMs} syncKey={`node:${id}`} />
         ))}
       </div>
 
-      <Panel title="Alert history" className="mt-4">
+      <Panel title="Alert history" tour="node-alerts" className="mt-4">
         <AlertHistory alerts={alerts} />
       </Panel>
     </>

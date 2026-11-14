@@ -11,7 +11,9 @@ import { useAuth } from '../../state/authStore';
 import { selectOpenIncidents, useIncidents } from '../../state/incidentStore';
 import { ConnectionBadge } from '../ConnectionBadge';
 import { DisplayMenu } from '../DisplayMenu';
+import { ShortcutsButton } from '../Shortcuts';
 import { Toaster } from '../Toaster';
+import { TourButton } from '../TourGuide';
 import { Logo, PageLoading, navFor, teamsLabel, useFocusOnNavigate } from './shared';
 
 const SIDEBAR_KEY = 'epicenter.sidebar';
@@ -159,6 +161,8 @@ export function GlassShell() {
         </p>
         <div className="glass pointer-events-auto flex shrink-0 items-center gap-0.5 rounded-full p-1">
           <ConnectionBadge bare />
+          <TourButton className="tool-btn" showLabel={false} />
+          <ShortcutsButton className="tool-btn" />
           <DisplayMenu buttonClassName="tool-btn" showLabel={false} />
           <button type="button" onClick={logout} className="tool-btn">
             <LogOut aria-hidden className="size-4" />

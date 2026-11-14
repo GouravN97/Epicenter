@@ -26,6 +26,27 @@ interface ChaosState {
   stop(runId?: string): Promise<void>;
 }
 
+/**
+ * A row of GET /chaos/runs as a RunRow. The server's rows carry `id` (not `runId`) and no `timeToDetectMs`,
+ * so both are derived here; a row already in scorecard shape passes through unchanged.
+ */
+export function normalizeRun(raw: Partial<RunRow> & { id?: string }): RunRow {
+  const { id, ...rest } = raw;
+  const startedAt = rest.startedAt ?? 0;
+  const detectedAt = rest.detectedAt ?? null;
+  return {
+    ...rest,
+    runId: rest.runId ?? id ?? `run-${startedAt}`,
+    scenario: rest.scenario!,
+    target: rest.target ?? null,
+    startedAt,
+    detectedAt,
+    timeToDetectMs: rest.timeToDetectMs ?? (detectedAt !== null ? Math.max(0, detectedAt - startedAt) : null),
+    detectedEpicenter: rest.detectedEpicenter ?? null,
+    correct: rest.correct ?? null,
+  };
+}
+
 /** GET /chaos/scenarios may return the list itself or `{ scenarios, active }`. */
 function unwrapScenarios(res: unknown): { scenarios: ChaosScenarioDef[] | null; active: ChaosActiveRun[] | null } {
   if (Array.isArray(res)) return { scenarios: res as ChaosScenarioDef[], active: null };
@@ -66,7 +87,7 @@ export const useChaos = create<ChaosState>((set, get) => ({
     try {
       const rows = await api.get<unknown>('/chaos/runs');
       const list = Array.isArray(rows) ? rows : ((rows as { runs?: unknown })?.runs ?? []);
-      set({ history: (list as RunRow[]).slice(0, 50) });
+      set({ history: (list as (Partial<RunRow> & { id?: string })[]).slice(0, 50).map(normalizeRun) });
     } catch (err) {
       if (err instanceof HttpError && err.status === 404) set({ serverHistory: false });
     }

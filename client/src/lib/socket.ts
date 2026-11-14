@@ -80,7 +80,7 @@ function wire(s: DashSocket): void {
  * many milliseconds, then reconnects, so the reconnect gap-fill can be shown. (DevTools' "Offline" switch
  * does not reliably close an open WebSocket.) Works in real and mock mode.
  */
-function dropConnection(ms = 15_000): string {
+export function dropConnection(ms = 15_000): string {
   const s = socket;
   if (!s) return 'Not connected.';
   const mock = s as unknown as { drop?: (ms: number) => void };

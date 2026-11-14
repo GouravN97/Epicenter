@@ -267,7 +267,7 @@ export function Topology() {
       )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <section className="card min-w-0 self-start">
+        <section data-tour="topo-map" className="card min-w-0 self-start">
           <TopologyMap topology={topoData} snapshot={snapshot} view={view} selected={selected} onSelect={setSelected} />
           <div className="border-t border-line">
             <Legend incident={!!incident?.epicenter} />
@@ -287,7 +287,7 @@ export function Topology() {
               <ServicePanel serviceId={selected} snapshot={snapshot} />
             </Panel>
           ) : null}
-          <Panel title="Incident">
+          <Panel title="Incident" tour="topo-incident">
             {incident ? (
               <IncidentPanel incident={incident} now={now} />
             ) : (
