@@ -235,6 +235,56 @@ export interface IncidentDetailDTO extends IncidentDTO {
   chaos: ChaosScorecard | null;
 }
 
+// ---------------------------------------------------------------- incident insights (GET /incidents/:id/insights)
+// Rule-based analysis of one incident, built by the pure functions in insights.ts. No model is involved.
+
+/** How a service relates to the epicenter: the root, a caller of it, or alerting for another reason. */
+export type InsightRole = 'epicenter' | 'downstream' | 'unexplained';
+
+export interface InsightService {
+  serviceId: string;
+  firstAlertAt: number;
+  alertCount: number;
+  severity: (typeof SEVERITIES)[number];
+  /** Most frequent alert kind on this service, as `rule/metric`. */
+  dominant: string;
+  role: InsightRole;
+}
+
+export interface InsightCheck {
+  id: string;
+  title: string;
+  detail: string;
+  /** Where to look, when the check is about one node or service. */
+  target?: { kind: 'service' | 'node'; id: string };
+}
+
+export interface SimilarIncident {
+  incident: IncidentDTO;
+  /** 0..1; see similarityScore. */
+  score: number;
+  reasons: string[];
+  durationMs: number | null;
+  notes: { text: string; userName: string }[];
+}
+
+export interface IncidentInsightsDTO {
+  incidentId: string;
+  generatedAt: number;
+  evidence: {
+    epicenter: string | null;
+    confidence: number;
+    /** Plain sentences explaining the epicenter, most important first. */
+    reasons: string[];
+    /** Alerting services in order of first alert. */
+    services: InsightService[];
+  };
+  checks: InsightCheck[];
+  similar: SimilarIncident[];
+  /** Postmortem draft, Markdown. */
+  postmortem: string;
+}
+
 // ---------------------------------------------------------------- chaos (§6.3, §8.9)
 
 export const CHAOS_SCENARIO_IDS = [

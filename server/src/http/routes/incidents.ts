@@ -1,4 +1,5 @@
-// Incidents REST (plan §6.2): GET /incidents, GET /incidents/:id, POST /incidents/:id/notes (sre, admin).
+// Incidents REST (plan §6.2): GET /incidents, GET /incidents/:id, GET /incidents/:id/insights,
+// POST /incidents/:id/notes (sre, admin).
 import { Router } from 'express';
 import { z } from 'zod';
 import { ALERTS_PAGE_DEFAULT, ALERTS_PAGE_MAX, IncidentNoteBodySchema, ObjectIdParamSchema, type TimelineEntry } from '@epicenter/shared';
@@ -21,6 +22,11 @@ export function incidentsRouter(incidents: IncidentService, onNote: (incidentId:
   r.get('/:id', auth, async (req, res) => {
     const { id } = ObjectIdParamSchema.parse(req.params);
     res.json(await incidents.detail(currentUser(req), id));
+  });
+
+  r.get('/:id/insights', auth, async (req, res) => {
+    const { id } = ObjectIdParamSchema.parse(req.params);
+    res.json(await incidents.insights(currentUser(req), id));
   });
 
   r.post('/:id/notes', auth, requireRole('sre', 'admin'), async (req, res) => {

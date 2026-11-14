@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { IncidentDTO } from '@epicenter/shared';
 import { SERVICE_BY_ID, isServiceId } from '@epicenter/shared';
 import { api, HttpError } from '../lib/api';
+import { notifyIncident } from '../lib/desktopNotify';
 import { useToasts } from './toastStore';
 
 /** How long a new incident is left to settle before it is announced. */
@@ -67,6 +68,7 @@ export const useIncidents = create<IncidentState>((set, get) => ({
           to: `/incidents/${cur.id}`,
           action: 'Open incident room',
         });
+        notifyIncident(cur); // also outside the tab, when desktop notifications are on
       }, NEW_INCIDENT_SETTLE_MS);
     } else if (prev?.state === 'open' && incident.state === 'resolved') {
       useToasts.getState().push({

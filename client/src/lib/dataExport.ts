@@ -105,14 +105,19 @@ export function buildAlertsExport(alerts: readonly AlertDTO[], filter: AlertsExp
 }
 
 /** `epicenter-<name>-20261114-215700.json`, safe on every filesystem. */
-export function exportFilename(name: string, now: number): string {
+export function exportFilename(name: string, now: number, ext = 'json'): string {
   const stamp = new Date(now).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-  return `epicenter-${name.replace(/[^a-zA-Z0-9.-]+/g, '-')}-${stamp}.json`;
+  return `epicenter-${name.replace(/[^a-zA-Z0-9.-]+/g, '-')}-${stamp}.${ext}`;
 }
 
 /** Saves `data` as a pretty-printed .json file through the browser's download. */
 export function downloadJson(filename: string, data: unknown): void {
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + '\n'], { type: 'application/json' }));
+  downloadText(filename, JSON.stringify(data, null, 2) + '\n', 'application/json');
+}
+
+/** Saves text (a Markdown report, for example) through the browser's download. */
+export function downloadText(filename: string, text: string, type = 'text/markdown'): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;

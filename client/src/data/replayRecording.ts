@@ -156,10 +156,11 @@ export function incidentMetric(alerts: AlertDTO[]): ReplayMetric {
 
 /**
  * The replay window for an incident: from a minute before it started to 30 s after it ended (or now),
- * capped at the server's 10-minute limit from the start.
+ * capped at the server's 10-minute limit from the start. Both ends are whole milliseconds: `now` comes from
+ * the synchronized clock, which carries a fractional offset, and the server only accepts integers.
  */
 export function replayWindow(inc: { startedAt: number; endedAt: number | null }, now: number, maxMs: number): { from: number; to: number } {
   const from = Math.floor((inc.startedAt - 60_000) / 1000) * 1000;
-  const end = inc.endedAt !== null ? Math.min(inc.endedAt + 30_000, now) : now;
+  const end = Math.floor(inc.endedAt !== null ? Math.min(inc.endedAt + 30_000, now) : now);
   return { from, to: Math.max(from + 1000, Math.min(end, from + maxMs)) };
 }

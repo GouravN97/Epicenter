@@ -108,6 +108,19 @@ describe('mock backend', () => {
     expect(got['alert:upd']!.some((a) => a.state === 'resolved')).toBe(true);
   });
 
+  it('analyses the slow-db incident with the shared rules, scoped to what the user may see', () => {
+    const h = harness(SLOW_DB_START - 5);
+    h.at(SLOW_DB_START + 40);
+    const inc = h.backend.incidentList(admin).find((i) => i.state === 'open')!;
+    const ins = h.backend.incidentInsights(admin, inc.id);
+    expect(ins.evidence.services.find((s) => s.role === 'epicenter')?.serviceId).toBe('db');
+    expect(ins.evidence.reasons[0]).toMatch(/^Database depends on no other service/);
+    expect(ins.checks.map((c) => c.id)).toEqual(expect.arrayContaining(['chaos', 'symptom:lat', 'downstream']));
+    expect(ins.similar.every((s) => s.incident.state === 'resolved' && s.incident.id !== inc.id)).toBe(true);
+    expect(ins.postmortem).toContain('- **Epicenter:** Database (100% confidence)');
+    expect(() => h.backend.incidentInsights(admin, 'nope')).toThrow('Incident not found');
+  });
+
   it('marks a killed node silent and recovers it', () => {
     const h = harness(NODE_KILL_START - 5);
     const target = h.backend.world.scheduledAt(NODE_KILL_START + 1)!.nodeIdx!;

@@ -309,6 +309,26 @@ only switches the clock back: there is nothing to catch up and nothing to dedupl
 appears in the replay at the moment the correlator settled on it, so the playback is faithful to what
 responders saw.
 
+### Automated analysis
+
+`GET /incidents/:id/insights` answers what a responder asks next, with fixed rules and no AI model. The
+logic is pure functions in `shared/src/insights.ts`, so the server and the client's mock backend give the
+same answer; the server only loads the data.
+
+- **Why this epicenter:** restates the correlator's reasoning from the alerts: the epicenter's dependencies
+  are healthy, the order in which services first alerted, how many alerting services depend on it, and
+  which ones it does not explain.
+- **Suggested checks:** a rule table keyed on the epicenter's kind of service (database, cache, queue,
+  gateway, API, worker) and its alert kinds, plus whether one node or most of the service is affected, and
+  a linked chaos run.
+- **Similar past incidents:** up to 50 resolved incidents the user may see that share the epicenter or an
+  affected service are scored: 0.5 for the same epicenter, 0.3 × overlap of affected services, 0.2 × overlap
+  of alert kinds. Matches of 0.4 or more are shown, at most three, with their duration and responder notes.
+- **Postmortem draft:** Markdown built from the incident, its alerts, timeline, notes and chaos scorecard.
+
+It is computed on request and never stored. The query uses the incident indexes and one aggregation over
+`alerts` by `incidentId`; nothing runs on the ingest path.
+
 ## 7. Performance techniques
 
 **Server**

@@ -2,11 +2,16 @@
 // memory (freshest); resolved ones from MongoDB.
 import { Types } from 'mongoose';
 import {
+  INSIGHTS_CANDIDATE_LIMIT,
+  INSIGHTS_NOTES_MAX,
+  buildInsights,
   type AlertDTO,
   type AuthClaims,
   type ChaosScorecard,
   type IncidentDTO,
   type IncidentDetailDTO,
+  type IncidentInsightsDTO,
+  type InsightCandidate,
   type Team,
   type TimelineEntry,
 } from '@epicenter/shared';
@@ -144,6 +149,45 @@ export class IncidentService {
       detectedEpicenter: memory?.detectedEpicenter ?? run.detectedEpicenter ?? null,
       correct: memory ? memory.correct : (run.correct ?? null),
     };
+  }
+
+  /**
+   * Rule-based analysis of one incident (shared/insights.ts): why this epicenter, what to check, similar past
+   * incidents and a postmortem draft. Computed on request from the incident and up to
+   * INSIGHTS_CANDIDATE_LIMIT resolved incidents the user may see; nothing is stored.
+   */
+  async insights(user: AuthClaims, id: string): Promise<IncidentInsightsDTO> {
+    const detail = await this.detail(user, id); // enforces visibility
+    const related: Record<string, unknown>[] = [{ affected: { $in: detail.affected } }];
+    if (detail.epicenter) related.push({ epicenter: detail.epicenter });
+    const docs = await IncidentModel.find({
+      _id: { $ne: new Types.ObjectId(id) },
+      teams: { $in: visibleTeams(user) },
+      mergedInto: null,
+      state: 'resolved',
+      $or: related,
+    })
+      .sort({ startedAt: -1 })
+      .limit(INSIGHTS_CANDIDATE_LIMIT)
+      .lean<IncidentDoc[]>();
+
+    const kinds = new Map<string, string[]>();
+    if (docs.length) {
+      const rows = await AlertModel.aggregate<{ _id: Types.ObjectId; kinds: string[] }>([
+        { $match: { incidentId: { $in: docs.map((d) => d._id) } } },
+        { $group: { _id: '$incidentId', kinds: { $addToSet: { $concat: ['$rule', '/', '$metric'] } } } },
+      ]);
+      for (const r of rows) kinds.set(r._id.toString(), r.kinds);
+    }
+    const candidates: InsightCandidate[] = docs.map((d) => ({
+      incident: docToDTO(d),
+      kinds: kinds.get(d._id.toString()) ?? [],
+      notes: d.timeline
+        .filter((e) => e.kind === 'note')
+        .slice(-INSIGHTS_NOTES_MAX)
+        .map((e) => ({ text: e.text, userName: e.userName ?? '' })),
+    }));
+    return buildInsights(detail, candidates, Date.now());
   }
 
   /** Appends a note; returns the timeline entry to broadcast as incident:note. */

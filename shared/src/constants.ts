@@ -123,6 +123,13 @@ export const INCIDENT_JOIN_WINDOW_MS = 60_000;
 export const INCIDENT_RESOLVE_QUIET_MS = 30_000;
 export const CHAOS_LINK_WINDOW_MS = 120_000;
 
+/** Incident insights: past incidents scored for similarity, the score a match needs, and how many are shown. */
+export const INSIGHTS_CANDIDATE_LIMIT = 50;
+export const INSIGHTS_SIMILAR_MIN_SCORE = 0.4;
+export const INSIGHTS_SIMILAR_MAX = 3;
+/** Responder notes carried over from each similar incident. */
+export const INSIGHTS_NOTES_MAX = 3;
+
 // ---------------------------------------------------------------- enums
 
 export const ROLES = ['admin', 'sre', 'viewer'] as const;
