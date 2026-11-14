@@ -212,7 +212,7 @@ export function Pipeline() {
         </p>
       )}
 
-      <ol className="grid gap-2 xl:grid-cols-6 xl:gap-4" aria-label="Path of an event">
+      <ol data-tour="pipeline-stages" className="grid gap-2 xl:grid-cols-6 xl:gap-4" aria-label="Path of an event">
         <Stage n={1} first title="Ingest" sub="validate, rate-limit" headline={v(s?.eps)} unit="events/s received">
           <Counter label="Rejected (invalid)" short="Invalid" value={v(s?.rejected)} total={t('rejected')} warn={!!s?.rejected} hint="Failed schema validation or the time window; counted per event." />
           <Counter label="Refused with 429" short="429s" value={v(s?.shed429)} total={t('shed429')} warn={!!s?.shed429} hint="Token bucket empty or the server shedding load; never parsed." />

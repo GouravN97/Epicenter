@@ -224,7 +224,7 @@ function ScenarioCard({ def, running }: { def: ChaosScenarioDef; running: ChaosA
 
   const id = `scn-${def.id}`;
   return (
-    <article aria-labelledby={id} className={`card flex flex-col p-4 ${live ? 'border-crit/50' : ''}`}>
+    <article aria-labelledby={id} data-tour={`chaos-${def.id}`} className={`card flex flex-col p-4 ${live ? 'border-crit/50' : ''}`}>
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-raised text-accent">
           <Icon aria-hidden className="size-5" />
@@ -411,7 +411,7 @@ export function ChaosLab() {
         );
       })}
 
-      <Panel title="Scorecards" className="mt-6">
+      <Panel title="Scorecards" tour="chaos-scorecards" className="mt-6">
         <History rows={history} scenarios={scenarios} serverHistory={serverHistory} now={now} />
       </Panel>
     </>

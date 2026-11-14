@@ -1,3 +1,4 @@
+import { hotkey } from '../lib/shortcuts';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CircleCheck, ShieldCheck, Siren } from 'lucide-react';
@@ -67,6 +68,7 @@ export function Incidents() {
       role="tab"
       aria-selected={filter === value}
       onClick={() => setFilter(value)}
+      {...hotkey('a')}
       className="segment px-3 py-1.5 text-sm"
     >
       {label}

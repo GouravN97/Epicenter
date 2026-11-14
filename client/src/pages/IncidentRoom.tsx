@@ -479,7 +479,7 @@ export function IncidentRoom() {
         <Presence users={users} />
       </header>
 
-      <section className="card mb-4 p-4" aria-label="Replay controls">
+      <section data-tour="replay-controls" className="card mb-4 p-4" aria-label="Replay controls">
         {recState.status === 'error' ? (
           <p className="text-sm text-muted">
             {recState.message}{' '}
@@ -519,12 +519,13 @@ export function IncidentRoom() {
           {detail?.chaos && (
             <Panel
               title="Chaos scorecard"
+              tour="incident-scorecard"
               actions={<FlaskConical aria-hidden className="size-4 text-muted" />}
             >
               <Scorecard card={detail.chaos} />
             </Panel>
           )}
-          <Panel title="Timeline" className="h-[26rem]">
+          <Panel title="Timeline" tour="incident-timeline" className="h-[26rem]">
             <Timeline
               entries={timeline}
               replayT={replaying ? replayT : null}

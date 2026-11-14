@@ -1,5 +1,9 @@
 // Live alert feed (plan §9.3): windowed list, newest first. Only the rows on screen are in the DOM, so
 // an alert storm does not grow the page.
+import { DETECTED_METRICS, type DetectedMetric } from '@epicenter/shared';
+import { Download } from 'lucide-react';
+import { METRIC_LABELS, buildAlertsExport, downloadJson, exportFilename, filterAlertsByMetric } from '../lib/dataExport';
+import { hotkey } from '../lib/shortcuts';
 import { useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { BellOff, Check, CircleCheck, OctagonAlert, TriangleAlert } from 'lucide-react';
@@ -78,10 +82,17 @@ export function AlertFeed() {
     'sre',
   );
   const [filter, setFilter] = useState<Filter>('active');
+  const [metric, setMetric] = useState<DetectedMetric | 'all'>('all');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const activeCount = useMemo(() => alerts.reduce((n, a) => n + (a.state === 'resolved' ? 0 : 1), 0), [alerts]);
-  const rows = useMemo(() => (filter === 'active' ? alerts.filter((a) => a.state !== 'resolved') : alerts), [alerts, filter]);
+  const rows = useMemo(() => filterAlertsByMetric(filter === 'active' ? alerts.filter((a) => a.state !== 'resolved') : alerts, metric), [alerts, filter, metric]);
+
+  /** Saves the alerts the feed is showing, with the filters that chose them. */
+  function onExport() {
+    const now = Date.now();
+    downloadJson(exportFilename(`alerts-${filter}-${metric}`, now), buildAlertsExport(rows, { state: filter, metric }, now));
+  }
 
   const virtualizer = useVirtualizer({
     count: rows.length,
@@ -97,6 +108,7 @@ export function AlertFeed() {
       role="tab"
       aria-selected={filter === value}
       onClick={() => setFilter(value)}
+      {...hotkey('a')}
       className="segment px-2.5 py-1 text-xs"
     >
       {label}
@@ -131,7 +143,7 @@ export function AlertFeed() {
     body = (
       <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
         <BellOff aria-hidden className="size-6 text-faint" />
-        <p className="text-sm text-fg">{filter === 'active' ? 'No active alerts' : 'No alerts yet'}</p>
+        <p className="text-sm text-fg">{metric !== 'all' ? `No ${filter === 'active' ? 'active ' : ''}${METRIC_LABELS[metric]} alerts` : filter === 'active' ? 'No active alerts' : 'No alerts yet'}</p>
         <p className="text-sm text-muted">{filter === 'active' ? 'Everything you can see is within its normal range.' : 'Alerts appear here as soon as one fires.'}</p>
       </div>
     );
@@ -166,6 +178,23 @@ export function AlertFeed() {
           {tab('all', `All ${alerts.length}`)}
         </div>
       </header>
+      <div className="flex items-center gap-2 border-b border-line px-4 py-2">
+        <label htmlFor="alert-metric" className="sr-only">
+          Filter alerts by metric
+        </label>
+        <select id="alert-metric" value={metric} onChange={(e) => setMetric(e.target.value as DetectedMetric | 'all')} className="field min-w-0 flex-1 px-2 py-1 text-xs">
+          <option value="all">All metrics</option>
+          {DETECTED_METRICS.map((m) => (
+            <option key={m} value={m}>
+              {METRIC_LABELS[m]}
+            </option>
+          ))}
+        </select>
+        <button type="button" onClick={onExport} disabled={rows.length === 0} {...hotkey('e')} className="btn shrink-0 px-2 py-1 text-xs text-muted hover:text-fg" title="Save the alerts shown as a .json file (E)">
+          <Download aria-hidden className="size-3.5" />
+          Export JSON
+        </button>
+      </div>
       <div className="min-h-0 flex-1">{body}</div>
     </section>
   );

@@ -5,7 +5,9 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../../state/authStore';
 import { ConnectionBadge } from '../ConnectionBadge';
 import { DisplayMenu } from '../DisplayMenu';
+import { ShortcutsButton } from '../Shortcuts';
 import { Toaster } from '../Toaster';
+import { TourButton } from '../TourGuide';
 import { Logo, PageLoading, navFor, teamsLabel, useFocusOnNavigate } from './shared';
 
 const headerButton = 'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted transition-colors hover:bg-raised hover:text-fg';
@@ -63,6 +65,8 @@ export function ControlShell() {
           <div className="hidden md:block" />
           <div className="flex items-center gap-2">
             <ConnectionBadge />
+            <TourButton className={headerButton} />
+            <ShortcutsButton className={headerButton} />
             <DisplayMenu buttonClassName={headerButton} />
             <button type="button" onClick={logout} className={headerButton}>
               <LogOut aria-hidden className="size-4" />

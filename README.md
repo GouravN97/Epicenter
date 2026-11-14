@@ -86,6 +86,12 @@ On top of the standard live dashboard, Epicenter adds four things:
   correction; idempotent bulk writes.
 - Team-scoped access control end to end: a payments viewer never receives another team's data, on any socket
   room or REST endpoint.
+- Guided tour for newcomers: on first sign-in the app walks through telemetry, alerts, root cause, replay and
+  the pipeline, highlighting each part of the screen and checking off hands-on exercises as they are done.
+  Restart it from the Tour button. The same material is in [`demo.md`](demo.md).
+- Metric filters and JSON export: on a node page, choose which of the eight metrics to chart and export them
+  over the selected range; in the alert feed, filter by metric and export the alerts shown.
+- Keyboard shortcuts for navigation, time ranges, replay, display mode and the tour; press `?` for the list.
 - Works on a phone: the layout collapses to one column with a bottom tab bar.
 - Accessible: keyboard operable (including the heatmap), skip link, focus moved to each page's heading,
   screen-reader announcements, status never conveyed by colour alone, reduced-motion support.

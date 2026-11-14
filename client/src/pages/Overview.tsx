@@ -81,7 +81,7 @@ export function Overview() {
       <PageHeader title="Overview" subtitle={`${scope} · ${total ? `${total} nodes` : 'loading fleet'}`} />
       <IncidentBanner />
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div data-tour="tiles" className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <StatTile
           label="Nodes healthy"
           value={reporting ? String(s.counts[0]) : '–'}
@@ -108,7 +108,7 @@ export function Overview() {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-3">
-        <Panel title="Fleet" className="xl:col-span-2">
+        <Panel title="Fleet" tour="fleet" className="xl:col-span-2">
           <div className="p-4">
             {topology && total > 0 ? (
               <>
@@ -139,7 +139,7 @@ export function Overview() {
           </div>
         </Panel>
         {/* The feed takes the height of the fleet panel beside it and scrolls inside. */}
-        <div className="relative h-[30rem] xl:h-auto xl:min-h-[30rem]">
+        <div data-tour="alerts" className="relative h-[30rem] xl:h-auto xl:min-h-[30rem]">
           <div className="absolute inset-0">
             <AlertFeed />
           </div>
