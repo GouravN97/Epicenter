@@ -21,6 +21,7 @@ import { SERVICES, type TopologyResponse } from '@epicenter/shared';
 import type { TopoSnapshot } from '../data/useTopoSnapshot';
 import { compact, ms } from '../lib/format';
 import { edgeId, edgeWidth, layoutLayers, type IncidentView } from '../lib/topologyView';
+import { useAppearance } from '../state/displayStore';
 import { STATUS_VIEW, StatusIcon } from './StatusIcon';
 
 const NODE_W = 172;
@@ -71,7 +72,7 @@ const ServiceNode = memo(function ServiceNode({ data }: NodeProps<ServiceNodeT>)
       <div aria-hidden className="absolute inset-0 rounded-lg bg-raised" />
       {(data.role === 'epicenter' || data.role === 'blast') && (
         <span
-          className={`absolute -top-[22px] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+          className={`absolute -top-[22px] left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${
             data.role === 'epicenter' ? 'bg-crit text-bg' : 'border border-crit/60 bg-bg text-crit'
           }`}
         >
@@ -126,7 +127,7 @@ function FlowEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targ
       {d.showLabel && d.rps > 0 && (
         <EdgeLabelRenderer>
           <div
-            className="metric pointer-events-none absolute rounded bg-bg/85 px-1 text-[10px] text-muted"
+            className="metric pointer-events-none absolute rounded bg-bg/85 px-1 text-micro text-muted"
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, opacity: d.dim ? 0.3 : 1 }}
           >
             {compact(d.rps)}
@@ -151,6 +152,7 @@ export interface TopologyMapProps {
 function MapView({ topology, snapshot, view, selected, onSelect }: TopologyMapProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const flow = useReactFlow();
+  const { scheme } = useAppearance();
   const placed = useMemo(
     () => layoutLayers(topology.services.map((s) => ({ id: s.id, layer: s.layer, dependsOn: s.dependsOn }))),
     [topology],
@@ -229,7 +231,7 @@ function MapView({ topology, snapshot, view, selected, onSelect }: TopologyMapPr
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        colorMode="dark"
+        colorMode={scheme}
         fitView
         fitViewOptions={{ padding: 0.12 }}
         minZoom={0.2}

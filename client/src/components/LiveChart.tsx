@@ -7,6 +7,7 @@ import 'uplot/dist/uPlot.min.css';
 import { clock, store } from '../data/live';
 import type { SeriesBuffer } from '../data/SeriesBuffer';
 import { clockTime, compact } from '../lib/format';
+import { useAppearance } from '../state/displayStore';
 
 export interface ChartSeries {
   label: string;
@@ -74,6 +75,8 @@ export function LiveChart(props: LiveChartProps) {
   const cfg = useRef(props);
   cfg.current = props;
   const seriesSig = props.series.map((s) => `${s.label}:${s.column}:${s.colorVar}`).join('|');
+  // Colours are read from the theme once, when the chart is built: build it again when they change.
+  const appearance = useAppearance().key;
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -235,7 +238,7 @@ export function LiveChart(props: LiveChartProps) {
     };
     // The chart is rebuilt only when its identity changes; everything else is read through `cfg`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.drawKey, seriesSig, props.unit, props.yMax, props.yFloor, props.syncKey]);
+  }, [props.drawKey, seriesSig, props.unit, props.yMax, props.yFloor, props.syncKey, appearance]);
 
   // The ghost has its own buffer: redraw when it changes, and when it is switched on or off.
   const ghostKey = props.ghost?.drawKey ?? null;

@@ -56,7 +56,7 @@ function AlertRow({ alert, fresh, canAck }: { alert: AlertDTO; fresh: boolean; c
           type="button"
           onClick={onAck}
           disabled={busy}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-xs text-muted transition-colors hover:border-accent hover:text-accent-strong disabled:opacity-50"
+          className="btn shrink-0 gap-1 px-2 py-1 text-xs text-muted"
         >
           <Check aria-hidden className="size-3.5" />
           Ack
@@ -97,7 +97,7 @@ export function AlertFeed() {
       role="tab"
       aria-selected={filter === value}
       onClick={() => setFilter(value)}
-      className={`rounded px-2.5 py-1 text-xs transition-colors ${filter === value ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:text-fg'}`}
+      className="segment px-2.5 py-1 text-xs"
     >
       {label}
     </button>
@@ -158,10 +158,10 @@ export function AlertFeed() {
   }
 
   return (
-    <section className="flex h-full min-w-0 flex-col rounded-lg border border-line bg-surface">
+    <section className="card flex h-full min-w-0 flex-col">
       <header className="flex min-h-11 items-center justify-between gap-3 border-b border-line px-4 py-2">
-        <h2 className="text-sm font-medium">Alerts</h2>
-        <div role="tablist" aria-label="Alert filter" className="flex gap-1">
+        <h2 className="panel-title">Alerts</h2>
+        <div role="tablist" aria-label="Alert filter" className="segmented flex gap-1">
           {tab('active', `Active ${activeCount}`)}
           {tab('all', `All ${alerts.length}`)}
         </div>

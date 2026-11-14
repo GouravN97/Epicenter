@@ -328,7 +328,12 @@ lockfile.
 listed above once deployed.
 
 **Design resources**: colour palettes for the CPU heat ramp and chart series were checked for colour-blind
-separation and contrast against the dark surface; status is always paired with an icon and a label.
+separation and contrast against each surface they are drawn on; status is always paired with an icon and a label.
+
+**Display modes**: the web app has two, chosen from the Display button in the toolbar and remembered per
+browser. *Control room* is the dense, always-dark interface. *Glass* is roomier, with floating navigation,
+and follows the system's light or dark appearance. Both use the same pages; the mode changes the shell and
+the theme tokens (`client/src/index.css`, `client/src/state/displayStore.ts`).
 
 **AI assistance**: parts of this project were written with the help of an AI coding assistant (Claude Code),
 as the hackathon's AI policy permits. The team reviewed, tested and can explain all of it.

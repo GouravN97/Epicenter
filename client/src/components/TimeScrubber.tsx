@@ -61,8 +61,7 @@ export const TimeScrubber = forwardRef<ScrubberHandle, TimeScrubberProps>(functi
   useEffect(() => {
     if (!replay && input.current) input.current.value = String(p.to);
   }, [replay, p.to]);
-  const button =
-    'inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm transition-colors hover:border-accent hover:text-accent-strong disabled:opacity-50';
+  const button = 'btn';
 
   return (
     <div className="space-y-3">
@@ -82,7 +81,7 @@ export const TimeScrubber = forwardRef<ScrubberHandle, TimeScrubberProps>(functi
           <RotateCcw aria-hidden className="size-4" />
           <span className="sr-only sm:not-sr-only">Start</span>
         </button>
-        <div role="radiogroup" aria-label="Playback speed" className="flex rounded-md border border-line p-0.5">
+        <div role="radiogroup" aria-label="Playback speed" className="segmented flex rounded-md border border-line p-0.5">
           {SPEEDS.map((s) => (
             <button
               key={s}
@@ -90,7 +89,7 @@ export const TimeScrubber = forwardRef<ScrubberHandle, TimeScrubberProps>(functi
               role="radio"
               aria-checked={speed === s}
               onClick={() => p.onSpeed(s)}
-              className={`metric rounded px-2.5 py-1 text-sm ${speed === s ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:text-fg'}`}
+              className="segment metric px-2.5 py-1 text-sm"
             >
               {s}×
             </button>
@@ -115,7 +114,7 @@ export const TimeScrubber = forwardRef<ScrubberHandle, TimeScrubberProps>(functi
               type="button"
               onClick={p.onGoLive}
               disabled={!replay}
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-bg transition-colors hover:bg-accent-strong disabled:bg-raised disabled:text-muted"
+              className="btn-primary disabled:bg-raised disabled:text-muted"
             >
               Go Live
             </button>

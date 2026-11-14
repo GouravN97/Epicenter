@@ -44,7 +44,7 @@ function IncidentPanel({ incident, now }: { incident: IncidentDTO; now: number }
       </dl>
       <Link
         to={`/incidents/${incident.id}`}
-        className="inline-block rounded-md border border-line px-3 py-1.5 text-sm text-fg transition-colors hover:border-accent hover:text-accent-strong"
+        className="btn px-3 text-fg"
       >
         Open incident room
       </Link>
@@ -242,7 +242,7 @@ export function Topology() {
               <select
                 value={incident?.id ?? ''}
                 onChange={(e) => setIncidentId(e.target.value)}
-                className="max-w-64 rounded-md border border-line bg-surface px-2 py-1.5 text-sm text-fg"
+                className="field max-w-64 bg-surface px-2 py-1.5"
               >
                 {open.map((i) => (
                   <option key={i.id} value={i.id}>
@@ -267,7 +267,7 @@ export function Topology() {
       )}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <section className="min-w-0 self-start rounded-lg border border-line bg-surface">
+        <section className="card min-w-0 self-start">
           <TopologyMap topology={topoData} snapshot={snapshot} view={view} selected={selected} onSelect={setSelected} />
           <div className="border-t border-line">
             <Legend incident={!!incident?.epicenter} />

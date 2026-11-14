@@ -31,7 +31,7 @@ export function IncidentBanner() {
       </div>
       <Link
         to={`/incidents/${inc.id}`}
-        className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-fg transition-colors hover:border-accent hover:text-accent-strong"
+        className="btn bg-surface px-3 text-fg"
       >
         Open incident
       </Link>

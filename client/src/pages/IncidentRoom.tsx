@@ -68,7 +68,7 @@ function Presence({ users }: { users: PresenceUser[] }) {
           <span
             key={u.id}
             title={u.name}
-            className="flex size-7 items-center justify-center rounded-full border-2 border-bg bg-raised text-[11px] font-medium text-fg"
+            className="flex size-7 items-center justify-center rounded-full border-2 border-bg bg-raised text-mini font-medium text-fg"
           >
             {u.name
               .split(/\s+/)
@@ -192,12 +192,12 @@ function Timeline({
               onChange={(e) => setText(e.target.value)}
               maxLength={2000}
               placeholder="Add a note for the team…"
-              className="min-w-0 flex-1 rounded-md border border-line bg-bg px-3 py-1.5 text-sm placeholder:text-faint focus:border-accent focus:outline-none"
+              className="field min-w-0 flex-1 px-3 py-1.5"
             />
             <button
               type="submit"
               disabled={busy || !text.trim()}
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-bg hover:bg-accent-strong disabled:opacity-50"
+              className="btn-primary disabled:opacity-50"
             >
               Add
             </button>
@@ -470,7 +470,7 @@ export function IncidentRoom() {
               {open ? `open ${duration(clock.liveNow() - incident.startedAt)}` : `lasted ${duration((incident.endedAt ?? incident.startedAt) - incident.startedAt)}`}
             </span>
           </p>
-          <h1 className="text-lg font-semibold tracking-tight [overflow-wrap:anywhere] sm:text-xl">{incident.title || 'Incident'}</h1>
+          <h1 className="page-title page-title-content text-lg [overflow-wrap:anywhere] sm:text-xl">{incident.title || 'Incident'}</h1>
           <p className="mt-1 text-sm text-muted">
             Epicenter <span className="font-medium text-fg">{nameOf(incident.epicenter)}</span> · {Math.round(incident.confidence * 100)}% confidence ·{' '}
             {incident.affected.length} alerting, {incident.blastRadius.filter((s) => s !== incident.epicenter).length} in the blast radius
@@ -479,7 +479,7 @@ export function IncidentRoom() {
         <Presence users={users} />
       </header>
 
-      <section className="mb-4 rounded-lg border border-line bg-surface p-4" aria-label="Replay controls">
+      <section className="card mb-4 p-4" aria-label="Replay controls">
         {recState.status === 'error' ? (
           <p className="text-sm text-muted">
             {recState.message}{' '}
@@ -507,9 +507,9 @@ export function IncidentRoom() {
       </section>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <section className="min-w-0 self-start rounded-lg border border-line bg-surface">
+        <section className="card min-w-0 self-start">
           <header className="flex min-h-11 items-center justify-between border-b border-line px-4 py-2">
-            <h2 className="text-sm font-medium">Topology</h2>
+            <h2 className="panel-title">Topology</h2>
             <span className="text-xs text-muted">{replaying ? 'Recorded state at the replay position' : 'Live'}</span>
           </header>
           <TopologyMap topology={topoData} snapshot={snapshot} view={view} selected={null} onSelect={() => {}} />

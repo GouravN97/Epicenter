@@ -5,6 +5,7 @@ import uPlot from 'uplot';
 import 'uplot/dist/uPlot.min.css';
 import { clock, store } from '../data/live';
 import { clockTime, compact } from '../lib/format';
+import { useAppearance } from '../state/displayStore';
 import { timeSplits } from './LiveChart';
 
 export interface ReplayChartProps {
@@ -25,6 +26,8 @@ export function ReplayChart(props: ReplayChartProps) {
   const wrap = useRef<HTMLDivElement>(null);
   const cfg = useRef(props);
   cfg.current = props;
+  // Colours are read from the theme once, when the chart is built: build it again when they change.
+  const appearance = useAppearance().key;
 
   useEffect(() => {
     const el = wrap.current;
@@ -124,7 +127,7 @@ export function ReplayChart(props: ReplayChartProps) {
       u.over.removeEventListener('click', onClick);
       u.destroy();
     };
-  }, [props.t, props.series, props.unit, props.markers, props.drawKey]);
+  }, [props.t, props.series, props.unit, props.markers, props.drawKey, appearance]);
 
   return <div ref={wrap} role="img" aria-label={props.ariaLabel} className="w-full" />;
 }

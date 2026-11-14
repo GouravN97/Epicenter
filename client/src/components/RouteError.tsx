@@ -20,7 +20,7 @@ export function RouteError() {
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-bg hover:bg-accent-strong"
+        className="btn-primary"
       >
         Reload
       </button>

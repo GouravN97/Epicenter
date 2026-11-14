@@ -1,7 +1,11 @@
 @import 'tailwindcss';
 
 /*
- * Theme tokens (plan §9.4). Dark control-room theme:
+ * Theme tokens (plan §9.4). Two display modes share one set of token names (see state/displayStore.ts):
+ *   control (default)  the dark control-room theme, defined in @theme below
+ *   glass              roomier, floating navigation, light or dark with the system; its values override
+ *                      the same tokens under :root[data-display='glass'] further down
+ * In both:
  *  - one neutral surface scale (bg → surface → raised), one line colour
  *  - ONE accent, used only for interactive elements
  *  - status colours are reserved strictly for status so they keep their meaning
@@ -21,6 +25,13 @@
   --color-accent: #6ea8fe;
   --color-accent-strong: #8fbcff;
   --color-accent-soft: #6ea8fe1f;
+  /* A filled (primary) button and the text on it. */
+  --color-accent-fill: #6ea8fe;
+  --color-accent-fill-strong: #8fbcff;
+  --color-on-accent: #0b0e13;
+  /* Neutral tint for hover and for controls without a border. */
+  --color-fill: #8d96a81f;
+  --color-fill-strong: #8d96a833;
 
   /* CPU heat ramp: one hue, five ordinal steps, dark (recedes into the surface) → light (hot).
      Validated on --color-surface: monotone lightness, visible step gaps, darkest step ≥ 2:1. */
@@ -39,6 +50,10 @@
   --color-warn: #e5a83b;
   --color-crit: #ef5b5b;
   --color-silent: #8a7fb5;
+
+  /* The two smallest text sizes, as tokens so Glass can raise them to its minimums. */
+  --text-micro: 0.625rem;
+  --text-mini: 0.6875rem;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, Consolas, monospace;
@@ -90,7 +105,7 @@ body {
   animation: fresh-row 2.5s ease-out;
 }
 
-/* uPlot legend, restyled for the dark theme. It doubles as the hover readout: values follow the cursor. */
+/* uPlot legend, restyled with the theme tokens. It doubles as the hover readout: values follow the cursor. */
 .uplot {
   font-family: var(--font-sans);
 }
@@ -150,7 +165,7 @@ body {
   position: absolute;
   inset: 0;
   border: 2px solid var(--color-crit);
-  border-radius: 0.5rem;
+  border-radius: var(--radius-lg);
   animation: epicenter-ripple 2s ease-out infinite;
   pointer-events: none;
 }
@@ -203,4 +218,495 @@ h1[tabindex='-1']:focus {
 }
 .toast-in {
   animation: toast-in 180ms ease-out;
+}
+
+/* ------------------------------------------------------------------------------------------------
+ * Shared component classes. Each one is defined here for the control room (exactly the utilities the
+ * pages used to repeat) and restyled for Glass further down. They sit in the components layer, so a
+ * utility on the element still wins: `btn px-3`, `card p-4`, `card border-crit/50`.
+ * ---------------------------------------------------------------------------------------------- */
+:root {
+  color-scheme: dark;
+}
+
+@layer components {
+  /* A content surface: panels, tiles, lists. */
+  .card {
+    @apply rounded-lg border border-line bg-surface;
+  }
+  /* Tooltips, notifications, menus: anything that floats above the page for a moment. */
+  .popover {
+    @apply border border-line bg-raised shadow-lg shadow-black/40;
+  }
+  /* Secondary button. Text colour is the element's own. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm transition-colors hover:border-accent hover:text-accent-strong disabled:opacity-50;
+  }
+  /* The one main action of a view. */
+  .btn-primary,
+  .btn-tinted {
+    @apply inline-flex items-center justify-center rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-bg transition-colors hover:bg-accent-strong;
+  }
+  /* Text inputs and selects. */
+  .field {
+    @apply rounded-md border border-line bg-bg text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none;
+  }
+  /* One option of a segmented control; the selected one is marked by aria-selected or aria-checked. */
+  .segment {
+    @apply rounded text-muted transition-colors hover:text-fg;
+  }
+  .segment:is([aria-selected='true'], [aria-checked='true']),
+  .segment:is([aria-selected='true'], [aria-checked='true']):hover {
+    @apply bg-accent-soft text-accent-strong;
+  }
+  .page-title {
+    @apply text-xl font-semibold tracking-tight;
+  }
+  .panel-title {
+    @apply text-sm font-medium;
+  }
+}
+
+/* Glass-only decoration; the control room has none. */
+.ambient {
+  display: none;
+}
+
+/* ================================================================================================
+ * Glass display mode
+ *
+ * Structure follows Apple's two layers: an opaque content layer (cards on a grouped background) and a
+ * small functional layer of translucent navigation floating above it (sidebar, toolbar, tab bar).
+ * Colours are chosen per appearance, not inverted: every text colour is at least 4.5:1 on the surfaces
+ * it is used on, in light and in dark; the heat ramp and chart series were re-validated on each surface.
+ * ============================================================================================== */
+:root[data-display='glass'] {
+  color-scheme: light dark;
+
+  --color-bg: #f1f2f6;
+  --color-surface: #ffffff;
+  --color-raised: #e8eaf0;
+  --color-line: #d5d8e0;
+  --color-fg: #12151b;
+  --color-muted: #56606e;
+  --color-faint: #5f6876;
+
+  --color-accent: #1859c6;
+  --color-accent-strong: #114aa8;
+  --color-accent-soft: #1859c61a;
+  --color-accent-fill: #1859c6;
+  --color-accent-fill-strong: #114aa8;
+  --color-on-accent: #ffffff;
+  --color-fill: #12151b0f;
+  --color-fill-strong: #12151b1c;
+
+  /* On a light surface the ramp runs the other way: low CPU is pale and recedes, high CPU is dark. */
+  --color-heat-1: #86b3ef;
+  --color-heat-2: #5e97e6;
+  --color-heat-3: #3a7ad6;
+  --color-heat-4: #235db3;
+  --color-heat-5: #153f82;
+
+  --color-series-1: #2a78d6;
+  --color-series-2: #d95926;
+
+  --color-ok: #136c3e;
+  --color-warn: #8a4e00;
+  --color-crit: #b01e1e;
+  --color-silent: #5f5197;
+
+  /* Type: one step up from the control room, and nothing below 11 px. */
+  --text-micro: 0.6875rem;
+  --text-mini: 0.6875rem;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.9375rem;
+
+  /* Shape: card radius 18, controls 10, so a control nested in a card stays concentric with it. */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 1.125rem;
+
+  --color-popover: #ffffff;
+  --color-segment-on: #ffffff;
+  --shadow-card: 0 1px 2px rgb(18 21 27 / 0.05), 0 0 0 0.5px rgb(18 21 27 / 0.04);
+  --shadow-pop: 0 12px 32px rgb(18 21 27 / 0.16), 0 0 0 0.5px rgb(18 21 27 / 0.08);
+
+  /* The material of the functional layer. The sidebar uses the thicker fill: it carries more text. */
+  --glass-fill: rgb(255 255 255 / 0.68);
+  --glass-fill-thick: rgb(255 255 255 / 0.8);
+  --glass-stroke: rgb(255 255 255 / 0.85);
+  --glass-shadow: 0 10px 30px rgb(18 21 27 / 0.1), 0 0 0 0.5px rgb(18 21 27 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-display='glass'] {
+    --color-bg: #060709;
+    --color-surface: #15171c;
+    --color-raised: #20232a;
+    --color-line: #2d313a;
+    --color-fg: #f1f3f6;
+    --color-muted: #a1a9b6;
+    --color-faint: #939caa;
+
+    --color-accent: #78aeff;
+    --color-accent-strong: #9cc4ff;
+    --color-accent-soft: #78aeff24;
+    --color-accent-fill: #2a66dc;
+    --color-accent-fill-strong: #3b77ea;
+    --color-on-accent: #ffffff;
+    --color-fill: #ffffff17;
+    --color-fill-strong: #ffffff26;
+
+    --color-heat-1: #184f95;
+    --color-heat-2: #256abf;
+    --color-heat-3: #3987e5;
+    --color-heat-4: #6da7ec;
+    --color-heat-5: #b7d3f6;
+
+    --color-series-1: #3987e5;
+    --color-series-2: #d95926;
+
+    --color-ok: #45c488;
+    --color-warn: #efae3c;
+    --color-crit: #ff6a61;
+    --color-silent: #a195d8;
+
+    --color-popover: #20232a;
+    --color-segment-on: #ffffff2e;
+    --shadow-card: none;
+    --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.08);
+
+    --glass-fill: rgb(32 35 42 / 0.74);
+    --glass-fill-thick: rgb(26 28 34 / 0.84);
+    --glass-stroke: rgb(255 255 255 / 0.1);
+    --glass-shadow: 0 10px 30px rgb(0 0 0 / 0.5);
+  }
+}
+
+/* Phones are read at arm's length and operated by touch: body text at 16 px. */
+@media (max-width: 47.99rem) {
+  :root[data-display='glass'] {
+    --text-sm: 1rem;
+  }
+}
+
+/* Increase Contrast: stronger secondary text and separators, and visible card edges. */
+@media (prefers-contrast: more) {
+  :root[data-display='glass'] {
+    --color-muted: #3d4551;
+    --color-faint: #3d4551;
+    --color-line: #7b8493;
+    --shadow-card: 0 0 0 1px var(--color-line);
+  }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root[data-display='glass'] {
+    --color-muted: #c9cfd9;
+    --color-faint: #c9cfd9;
+    --color-line: #8a93a2;
+  }
+}
+
+@layer components {
+  :root[data-display='glass'] .card {
+    border-color: transparent;
+    box-shadow: var(--shadow-card);
+  }
+  :root[data-display='glass'] .popover {
+    border-color: transparent;
+    background: var(--color-popover);
+    box-shadow: var(--shadow-pop);
+  }
+
+  /* Buttons: a neutral fill instead of an outline; colour is kept for the main action. */
+  :root[data-display='glass'] .btn {
+    min-height: 2rem;
+    border-color: transparent;
+    background: var(--color-fill);
+    font-weight: 500;
+  }
+  :root[data-display='glass'] .btn:hover {
+    border-color: transparent;
+    background: var(--color-fill-strong);
+    color: inherit;
+  }
+  :root[data-display='glass'] :is(.btn-primary, .btn-tinted) {
+    min-height: 2rem;
+    font-weight: 600;
+  }
+  :root[data-display='glass'] .btn-primary {
+    background: var(--color-accent-fill);
+    color: var(--color-on-accent);
+  }
+  :root[data-display='glass'] .btn-primary:hover {
+    background: var(--color-accent-fill-strong);
+  }
+  /* Where a view repeats the same action on every card, the fill is tinted, not solid, so the page
+     does not become a row of primary buttons. */
+  :root[data-display='glass'] .btn-tinted {
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+  }
+  :root[data-display='glass'] .btn-tinted:hover {
+    background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+    color: var(--color-accent-strong);
+  }
+
+  :root[data-display='glass'] .field {
+    min-height: 2rem;
+    border-color: transparent;
+    background: var(--color-fill);
+  }
+  :root[data-display='glass'] .field:focus {
+    border-color: var(--color-accent);
+    background: var(--color-surface);
+  }
+
+  /* Segmented control: a tinted track with the selected segment raised on it. */
+  :root[data-display='glass'] .segmented {
+    gap: 0;
+    border-color: transparent;
+    border-radius: var(--radius-md);
+    background: var(--color-fill);
+    padding: 2px;
+  }
+  :root[data-display='glass'] .segment {
+    min-height: 1.75rem;
+    border-radius: calc(var(--radius-md) - 2px);
+    color: var(--color-fg);
+    font-weight: 500;
+  }
+  :root[data-display='glass'] .segment:is([aria-selected='true'], [aria-checked='true']),
+  :root[data-display='glass'] .segment:is([aria-selected='true'], [aria-checked='true']):hover {
+    background: var(--color-segment-on);
+    color: var(--color-fg);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.14), 0 0 0 0.5px rgb(0 0 0 / 0.06);
+  }
+
+  :root[data-display='glass'] .panel-title {
+    font-weight: 600;
+  }
+
+  /* Touch: every control reaches 44 px. */
+  @media (pointer: coarse) {
+    :root[data-display='glass'] :is(.btn, .btn-primary, .btn-tinted, .field) {
+      min-height: 2.75rem;
+    }
+    :root[data-display='glass'] .segment {
+      min-height: 2.25rem;
+      min-width: 2.75rem;
+    }
+  }
+}
+
+/* Unlayered, so these win over the size utilities on the headings. */
+:root[data-display='glass'] .page-title {
+  font-size: clamp(1.75rem, 1.45rem + 1.3vw, 2.125rem);
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.022em;
+}
+/* A title that comes from the data (a node id, an incident) can be long: one size down. */
+:root[data-display='glass'] .page-title.page-title-content {
+  font-size: clamp(1.375rem, 1.2rem + 0.8vw, 1.75rem);
+  line-height: 1.2;
+}
+
+/* Small capitals above a stage title: a little less tracking, so each stays on one line in the
+   narrower columns this mode leaves beside its sidebar. */
+:root[data-display='glass'] .eyebrow {
+  letter-spacing: 0.005em;
+}
+
+/* Numbers stay tabular but are set in the interface face; headline numbers use its rounded cut where
+   the system has one (SF Pro Rounded), and the same face elsewhere. */
+:root[data-display='glass'] .metric,
+:root[data-display='glass'] .uplot .u-legend .u-value {
+  font-family: var(--font-sans);
+}
+/* Tiles are narrow on phones: the line under the number wraps instead of being cut off. */
+:root[data-display='glass'] .stat-hint {
+  white-space: normal;
+}
+:root[data-display='glass'] .stat-value {
+  font-family: ui-rounded, 'SF Pro Rounded', var(--font-sans);
+  font-size: 1.75rem;
+  line-height: 2rem;
+  letter-spacing: -0.01em;
+}
+
+/* --- The functional layer -------------------------------------------------------------------- */
+
+@layer components {
+  .glass {
+    border: 1px solid var(--glass-stroke);
+    background: var(--glass-fill);
+    box-shadow: var(--glass-shadow);
+    -webkit-backdrop-filter: blur(24px) saturate(1.5);
+    backdrop-filter: blur(24px) saturate(1.5);
+  }
+  .glass-thick {
+    background: var(--glass-fill-thick);
+  }
+}
+/* No backdrop blur available: the fill alone must carry legibility. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: var(--color-surface);
+  }
+}
+
+/* Where scrolling content meets the toolbar it blurs and fades out instead of running into a bar. */
+.scroll-edge::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 -1.25rem 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 84%, transparent) 35%, transparent);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent);
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+
+@layer components {
+  /* Toolbar and tab-bar buttons: comfortable for a pointer, 44 px for touch. */
+  .tool-btn {
+    display: inline-flex;
+    min-height: 2.25rem;
+    min-width: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    border-radius: 9999px;
+    padding: 0 0.625rem;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    color: var(--color-fg);
+    transition: background-color 150ms;
+  }
+  .tool-btn:hover,
+  .tool-btn[aria-expanded='true'] {
+    background: var(--color-fill);
+  }
+  @media (pointer: coarse) {
+    .tool-btn {
+      min-height: 2.75rem;
+      min-width: 2.75rem;
+    }
+  }
+}
+
+/* Notifications clear the floating tab bar on phones. */
+@media (max-width: 47.99rem) {
+  .glass-shell .toaster {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* --- Ambient field ---------------------------------------------------------------------------
+ * The signature of this mode. The logo is an epicenter with two rings; here the rings carry on across
+ * the backdrop, behind the content and under the glass. While an incident is open the field turns to
+ * the critical colour and slow rings travel outward from the same point. It is decoration that
+ * repeats a state, never the only sign of it: the sidebar badge and the incident banner say it in text.
+ */
+:root[data-display='glass'] .ambient {
+  --amb: var(--color-accent);
+  --amb-x: 2.5rem;
+  --amb-y: 2.5rem;
+  display: block;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: radial-gradient(64rem 44rem at var(--amb-x) var(--amb-y), color-mix(in srgb, var(--amb) 15%, transparent), transparent 70%);
+}
+:root[data-display='glass'] .ambient::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-radial-gradient(
+    circle at var(--amb-x) var(--amb-y),
+    transparent 0 3.5rem,
+    color-mix(in srgb, var(--amb) 26%, transparent) 3.5rem calc(3.5rem + 1px)
+  );
+  -webkit-mask-image: radial-gradient(56rem 38rem at var(--amb-x) var(--amb-y), #000, transparent 72%);
+  mask-image: radial-gradient(56rem 38rem at var(--amb-x) var(--amb-y), #000, transparent 72%);
+}
+/* On the sign-in page the field is centred on the logo above the form: the box reaches a full
+   viewport beyond the form on every side, and its origin is the middle of the logo. */
+:root[data-display='glass'] .ambient-centered {
+  --amb-x: 50%;
+  --amb-y: calc(100vh + 1.25rem);
+  inset: -100vh -100vw;
+  z-index: -1;
+  overflow: visible;
+}
+@media (max-width: 47.99rem) {
+  /* No sidebar on phones: the field starts off the top corner. */
+  :root[data-display='glass'] .glass-shell .ambient {
+    --amb-x: 0rem;
+    --amb-y: 0rem;
+  }
+}
+.glass-shell[data-alert] .ambient {
+  --amb: var(--color-crit);
+}
+.ambient-ring {
+  display: none;
+}
+.glass-shell[data-alert] .ambient-ring {
+  display: block;
+  position: absolute;
+  left: var(--amb-x);
+  top: var(--amb-y);
+  /* Drawn at its final size and scaled up to it, so the line is hairline-thin at full size. */
+  width: 88rem;
+  height: 88rem;
+  margin: -44rem 0 0 -44rem;
+  border: 1.5px solid var(--color-crit);
+  border-radius: 50%;
+  opacity: 0;
+  /* Transform and opacity only, so the rings never repaint the page while charts are drawing. */
+  animation: ambient-ring 7.5s linear infinite;
+}
+@keyframes ambient-ring {
+  from {
+    transform: scale(0.04);
+    opacity: 0.32;
+  }
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* Reduce Motion: the field still changes colour, nothing travels. */
+@media (prefers-reduced-motion: reduce) {
+  .glass-shell[data-alert] .ambient-ring {
+    display: none;
+  }
+}
+
+/* Reduce Transparency and Increase Contrast: the functional layer becomes opaque with a real edge. */
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .glass {
+    border-color: var(--color-line);
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .scroll-edge::before {
+    inset: 0;
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-bg);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  :root[data-display='glass'] .ambient {
+    display: none;
+  }
 }

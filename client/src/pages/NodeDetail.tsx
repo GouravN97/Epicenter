@@ -221,7 +221,7 @@ export function NodeDetail() {
       {back}
       <header className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div className="min-w-0">
-          <h1 className="metric truncate text-lg font-semibold tracking-tight sm:text-xl">{id}</h1>
+          <h1 className="page-title page-title-content metric truncate text-lg sm:text-xl">{id}</h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
             <span className="inline-flex items-center gap-1.5 text-fg">
               {st ? <StatusIcon status={status} /> : null}
@@ -241,13 +241,11 @@ export function NodeDetail() {
             type="button"
             aria-pressed={compare}
             onClick={() => setCompare((c) => !c)}
-            className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
-              compare ? 'border-accent bg-accent-soft text-accent-strong' : 'border-line text-muted hover:border-accent hover:text-fg'
-            }`}
+            className={`btn px-3 ${compare ? 'border-accent bg-accent-soft text-accent-strong' : 'text-muted hover:text-fg'}`}
           >
             Compare with 1 h ago
           </button>
-          <div role="radiogroup" aria-label="Time range" className="flex rounded-md border border-line p-0.5">
+          <div role="radiogroup" aria-label="Time range" className="segmented flex rounded-md border border-line p-0.5">
             {RANGES.map((r) => (
               <button
                 key={r.id}
@@ -255,9 +253,7 @@ export function NodeDetail() {
                 role="radio"
                 aria-checked={rangeId === r.id}
                 onClick={() => setRangeId(r.id)}
-                className={`metric rounded px-2.5 py-1 text-sm transition-colors ${
-                  rangeId === r.id ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:text-fg'
-                }`}
+                className="segment metric px-2.5 py-1 text-sm"
               >
                 {r.label}
               </button>

@@ -1,5 +1,6 @@
 // Fleet heatmap (plan §9.3): one <canvas>, a hexagon per node grouped under its service.
-//   fill    = CPU, five steps of one blue ramp (dark = idle, light = hot)
+//   fill    = CPU, five steps of one blue ramp; idle is the step nearest the surface, so it recedes
+//             (dark on a dark surface, pale on a light one), and hot is the step furthest from it
 //   outline = status (amber warning, red critical with a centre mark), stripes = silent
 // The canvas is drawn from the fleet typed arrays inside the shared animation-frame loop, so a
 // fleet:delta costs no React work. Hover and tooltip are handled imperatively for the same reason.
@@ -9,6 +10,7 @@ import { NodeStatus, SERVICES, SERVICE_BY_ID, isServiceId, type TopologyResponse
 import { FLEET_KEY, fleet as liveFleet, store, topology } from '../data/live';
 import type { FleetState } from '../data/fleetState';
 import { CPU_BUCKET_LABELS, LABEL_H, cpuBucket, hitTest, layoutHeatmap, neighbour, type Direction, type HeatGroupInput, type HeatLayout, type HexCell } from '../lib/heatmapLayout';
+import { useAppearance } from '../state/displayStore';
 import { STATUS_VIEW, StatusIcon } from './StatusIcon';
 
 interface Palette {
@@ -97,6 +99,8 @@ export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEE
   const tipRef = useRef<HTMLDivElement>(null);
   const announceRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  // The palette is read from the theme when the drawer is set up: set it up again when the theme changes.
+  const appearance = useAppearance().key;
 
   const groups = useMemo(() => groupsOf(topo), [topo]);
   const layout = useMemo<HeatLayout | null>(() => (width > 0 ? layoutHeatmap(groups, width) : null), [groups, width]);
@@ -317,7 +321,7 @@ export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEE
       canvas.removeEventListener('blur', onBlur);
       tip.hidden = true;
     };
-  }, [layout, navigate, state, drawKey]);
+  }, [layout, navigate, state, drawKey, appearance]);
 
   return (
     <div ref={wrapRef} className="relative">
@@ -333,7 +337,7 @@ export function FleetHeatmap({ topology: topo, state = liveFleet, drawKey = FLEE
       <div
         ref={tipRef}
         hidden
-        className="pointer-events-none absolute left-0 top-0 z-10 w-max max-w-64 rounded-md border border-line bg-raised px-3 py-2 text-xs shadow-lg shadow-black/40"
+        className="popover pointer-events-none absolute left-0 top-0 z-10 w-max max-w-64 rounded-md px-3 py-2 text-xs"
       >
         <div data-f="id" className="metric text-fg" />
         <div data-f="where" className="mt-0.5 text-muted" />
@@ -371,7 +375,7 @@ export function HeatmapLegend({ counts }: { counts: readonly number[] }) {
           {CPU_BUCKET_LABELS.map((label, i) => (
             <div key={label} className="text-center">
               <div className="h-2.5 w-11 rounded-sm" style={{ background: `var(--color-heat-${i + 1})` }} />
-              <div className="metric mt-1 text-[10px] text-faint">{label}</div>
+              <div className="metric mt-1 text-micro text-faint">{label}</div>
             </div>
           ))}
         </div>

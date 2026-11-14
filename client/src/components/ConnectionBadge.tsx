@@ -32,7 +32,8 @@ function useDelaySeconds(active: boolean): string | null {
   return text;
 }
 
-export function ConnectionBadge() {
+/** `bare` drops the badge's own outline, for use inside a toolbar group that already has one. */
+export function ConnectionBadge({ bare = false }: { bare?: boolean }) {
   const status = useConnection((s) => s.status);
   const { mode } = useClock();
   const streaming = status === 'live' || status === 'mock';
@@ -43,7 +44,7 @@ export function ConnectionBadge() {
       role="status"
       aria-label={`Connection: ${v.label}${lag ? `, data delay ${lag}` : ''}`}
       title={lag ? 'Median delay from a reading being taken to it reaching this screen. About 3 s of it is the window the server holds open for late events.' : undefined}
-      className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-2.5 py-1 text-xs text-muted"
+      className={`inline-flex items-center gap-2 px-2.5 py-1 text-xs text-muted ${bare ? '' : 'rounded-full border border-line bg-surface'}`}
     >
       <span className={`size-2 rounded-full ${v.dot} ${v.pulse ? 'animate-pulse' : ''}`} />
       {v.label}

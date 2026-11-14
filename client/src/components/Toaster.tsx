@@ -30,7 +30,7 @@ function ToastItem({ t }: { t: Toast }) {
       onMouseLeave={() => setHeld(false)}
       onFocus={() => setHeld(true)}
       onBlur={() => setHeld(false)}
-      className="toast-in pointer-events-auto flex w-full items-start gap-3 rounded-lg border border-line bg-raised p-3 shadow-lg shadow-black/40"
+      className="popover toast-in pointer-events-auto flex w-full items-start gap-3 rounded-lg p-3"
     >
       <Icon aria-hidden className={`mt-0.5 size-4 shrink-0 ${TONE[t.tone]}`} />
       <div className="min-w-0 flex-1">
@@ -55,7 +55,7 @@ export function Toaster() {
     <ol
       aria-live="polite"
       aria-label="Notifications"
-      className="pointer-events-none fixed inset-x-3 bottom-20 z-40 flex flex-col gap-2 sm:inset-x-auto sm:right-4 sm:w-96 md:bottom-4"
+      className="toaster pointer-events-none fixed inset-x-3 bottom-20 z-40 flex flex-col gap-2 sm:inset-x-auto sm:right-4 sm:w-96 md:bottom-4"
     >
       {toasts.map((t) => (
         <ToastItem key={t.id} t={t} />

@@ -95,7 +95,7 @@ function ActiveRuns({ runs, scenarios, now }: { runs: ChaosActiveRun[]; scenario
             type="button"
             onClick={() => void onStop()}
             disabled={busy !== null}
-            className="inline-flex items-center gap-1.5 rounded-md border border-crit/50 px-2.5 py-1 text-xs text-crit transition-colors hover:bg-crit/10 disabled:opacity-50"
+            className="btn border-crit/50 py-1 text-xs text-crit hover:border-crit/50 hover:bg-crit/10 hover:text-crit"
           >
             <Square aria-hidden className="size-3" />
             Stop all
@@ -132,7 +132,7 @@ function ActiveRuns({ runs, scenarios, now }: { runs: ChaosActiveRun[]; scenario
                   type="button"
                   onClick={() => void onStop(r.runId)}
                   disabled={busy !== null}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-sm text-fg transition-colors hover:border-crit hover:text-crit disabled:opacity-50"
+                  className="btn text-fg hover:border-crit hover:text-crit"
                 >
                   <Square aria-hidden className="size-3.5" />
                   {busy === r.runId ? 'Stopping…' : 'Stop'}
@@ -155,8 +155,7 @@ function ActiveRuns({ runs, scenarios, now }: { runs: ChaosActiveRun[]; scenario
 
 function TargetPicker({ def, value, onChange }: { def: ChaosScenarioDef; value: string; onChange: (v: string) => void }) {
   const topo = useTopology();
-  const select =
-    'w-full min-w-0 rounded-md border border-line bg-bg px-2.5 py-1.5 text-sm text-fg focus:border-accent focus:outline-none disabled:opacity-60';
+  const select = 'field w-full min-w-0 px-2.5 py-1.5 disabled:opacity-60';
   if (def.targetKind === 'none') {
     return <p className="rounded-md border border-dashed border-line px-2.5 py-1.5 text-sm text-muted">Whole fleet</p>;
   }
@@ -225,7 +224,7 @@ function ScenarioCard({ def, running }: { def: ChaosScenarioDef; running: ChaosA
 
   const id = `scn-${def.id}`;
   return (
-    <article aria-labelledby={id} className={`flex flex-col rounded-lg border bg-surface p-4 ${live ? 'border-crit/50' : 'border-line'}`}>
+    <article aria-labelledby={id} className={`card flex flex-col p-4 ${live ? 'border-crit/50' : ''}`}>
       <div className="flex items-start gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-raised text-accent">
           <Icon aria-hidden className="size-5" />
@@ -248,7 +247,7 @@ function ScenarioCard({ def, running }: { def: ChaosScenarioDef; running: ChaosA
             aria-label="Duration"
             value={secs}
             onChange={(e) => setSecs(Number(e.target.value))}
-            className="metric rounded-md border border-line bg-bg px-2 py-1.5 text-sm text-fg focus:border-accent focus:outline-none"
+            className="field metric px-2 py-1.5"
           >
             {durations.map((d) => (
               <option key={d} value={d}>
@@ -260,7 +259,7 @@ function ScenarioCard({ def, running }: { def: ChaosScenarioDef; running: ChaosA
             type="button"
             onClick={() => void onStart()}
             disabled={busy || (def.targetKind === 'node' && !chosen)}
-            className="w-full rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-bg transition-colors hover:bg-accent-strong disabled:opacity-50"
+            className="btn-tinted w-full disabled:opacity-50"
           >
             {busy ? 'Starting…' : live ? 'Start another' : 'Start'}
           </button>

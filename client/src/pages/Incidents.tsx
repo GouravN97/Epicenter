@@ -27,7 +27,7 @@ function Row({ inc, now }: { inc: IncidentDTO; now: number }) {
     <li>
       <Link
         to={`/incidents/${inc.id}`}
-        className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-line px-4 py-3 transition-colors last:border-0 hover:bg-raised sm:grid-cols-[auto_minmax(0,1fr)_auto]"
+        className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-line px-4 py-3 transition-colors last:border-0 hover:bg-raised sm:grid-cols-[auto_minmax(0,1fr)_auto] [li:first-child>&]:rounded-t-lg [li:last-child>&]:rounded-b-lg"
       >
         {open ? <Siren aria-hidden className="mt-0.5 size-4 text-crit" /> : <CircleCheck aria-hidden className="mt-0.5 size-4 text-faint" />}
         <div className="min-w-0">
@@ -67,7 +67,7 @@ export function Incidents() {
       role="tab"
       aria-selected={filter === value}
       onClick={() => setFilter(value)}
-      className={`rounded px-3 py-1.5 text-sm ${filter === value ? 'bg-accent-soft text-accent-strong' : 'text-muted hover:text-fg'}`}
+      className="segment px-3 py-1.5 text-sm"
     >
       {label}
     </button>
@@ -107,7 +107,7 @@ export function Incidents() {
     );
   } else {
     body = (
-      <ul className="rounded-lg border border-line bg-surface" aria-label="Incidents, newest first">
+      <ul className="card" aria-label="Incidents, newest first">
         {rows.map((inc) => (
           <Row key={inc.id} inc={inc} now={now} />
         ))}
@@ -121,7 +121,7 @@ export function Incidents() {
         title="Incidents"
         subtitle="Correlated alerts, each with its epicenter and a recording you can replay"
         actions={
-          <div role="tablist" aria-label="Incident filter" className="flex gap-1 rounded-md border border-line p-0.5">
+          <div role="tablist" aria-label="Incident filter" className="segmented flex gap-1 rounded-md border border-line p-0.5">
             {tab('open', `Open ${openCount}`)}
             {tab('all', `All ${incidents.length}`)}
           </div>

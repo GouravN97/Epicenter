@@ -102,8 +102,8 @@ function Stage({ n, title, sub, headline, unit, children, first }: { n: number; 
           <ChevronDown aria-hidden className="mx-auto -mb-1 -mt-2 block size-5 text-accent xl:hidden" />
         </>
       )}
-      <section aria-label={`Stage ${n}: ${title}`} className="h-full rounded-lg border border-line bg-surface p-3">
-        <p className="text-[11px] uppercase tracking-wide text-faint">
+      <section aria-label={`Stage ${n}: ${title}`} className="card h-full p-3">
+        <p className="eyebrow text-mini uppercase tracking-wide text-faint">
           {n} · {sub}
         </p>
         <h3 className="text-sm font-semibold">{title}</h3>
@@ -180,7 +180,7 @@ export function Pipeline() {
           isAdmin ? (
             <Link
               to="/chaos"
-              className="inline-flex items-center gap-1.5 rounded-md border border-line px-3 py-1.5 text-sm text-muted transition-colors hover:border-accent hover:text-fg"
+              className="btn px-3 text-muted hover:text-fg"
             >
               <FlaskConical aria-hidden className="size-4" />
               Stress it in the Chaos Lab
@@ -198,7 +198,7 @@ export function Pipeline() {
             </p>
           )}
           {running.length > 0 && (
-            <p className="inline-flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm">
+            <p className="card inline-flex items-center gap-2 px-3 py-2 text-sm">
               <FlaskConical aria-hidden className="size-4 text-crit" />
               Chaos running: {running.join(', ')}
             </p>
