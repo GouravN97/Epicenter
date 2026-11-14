@@ -1,9 +1,17 @@
 // Display-mode picker: a button in the shell's toolbar that opens a small menu of the modes, each with a
 // thumbnail, its name and one line on what it is for. Choosing a mode swaps the whole shell, so the
 // button that opened the menu is replaced by its counterpart in the other shell; focus is handed to it.
+// The menu also holds the switch for desktop notifications of new incidents.
 import { useEffect, useRef, useState } from 'react';
-import { Check, MonitorCog } from 'lucide-react';
+import { Bell, BellOff, Check, MonitorCog } from 'lucide-react';
+import { useDesktopNotify, type NotifyStatus } from '../lib/desktopNotify';
 import { DISPLAY_MODES, useDisplay, type DisplayMode } from '../state/displayStore';
+
+const NOTIFY_HINT: Record<Exclude<NotifyStatus, 'unsupported'>, string> = {
+  on: 'On. A new incident notifies you even when this tab is in the background.',
+  off: 'Get notified of a new incident while you work in another window.',
+  blocked: 'Blocked for this site. Allow notifications in your browser’s site settings.',
+};
 
 /** Set when a mode is chosen; the picker that mounts in the new shell takes focus and clears it. */
 let focusAfterSwitch = false;
@@ -47,6 +55,7 @@ function ModePreview({ id }: { id: DisplayMode }) {
 export function DisplayMenu({ buttonClassName, showLabel = true }: { buttonClassName: string; showLabel?: boolean }) {
   const mode = useDisplay((s) => s.mode);
   const setMode = useDisplay((s) => s.setMode);
+  const notify = useDesktopNotify((s) => s.status);
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -84,7 +93,7 @@ export function DisplayMenu({ buttonClassName, showLabel = true }: { buttonClass
   }
 
   function onMenuKey(e: React.KeyboardEvent) {
-    const items = [...(menu.current?.querySelectorAll<HTMLElement>('[role="menuitemradio"]') ?? [])];
+    const items = [...(menu.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]') ?? [])];
     const at = items.indexOf(document.activeElement as HTMLElement);
     const move = (i: number) => {
       e.preventDefault();
@@ -111,7 +120,7 @@ export function DisplayMenu({ buttonClassName, showLabel = true }: { buttonClass
         <div
           ref={menu}
           role="menu"
-          aria-label="Display mode"
+          aria-label="Display and notifications"
           onKeyDown={onMenuKey}
           className="popover absolute right-0 top-full z-50 mt-2 w-[min(19rem,calc(100vw-1.5rem))] rounded-lg p-1.5"
         >
@@ -132,6 +141,31 @@ export function DisplayMenu({ buttonClassName, showLabel = true }: { buttonClass
               <Check aria-hidden className={`size-4 shrink-0 text-accent ${mode === m.id ? '' : 'invisible'}`} />
             </button>
           ))}
+          {notify !== 'unsupported' && (
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={notify === 'on'}
+              aria-disabled={notify === 'blocked'}
+              onClick={() => {
+                // The menu stays open: the browser's permission prompt appears beside it, and the hint
+                // below then says whether it worked.
+                const s = useDesktopNotify.getState();
+                if (notify === 'on') s.disable();
+                else if (notify === 'off') void s.enable();
+              }}
+              className="mt-1.5 flex w-full items-center gap-3 rounded-md border-t border-line p-2 pt-3 text-left transition-colors hover:bg-fill"
+            >
+              <span className="flex h-[34px] w-12 shrink-0 items-center justify-center">
+                {notify === 'on' ? <Bell aria-hidden className="size-5 text-accent" /> : <BellOff aria-hidden className="size-5 text-muted" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-fg">Desktop notifications</span>
+                <span className="block text-xs text-muted">{NOTIFY_HINT[notify]}</span>
+              </span>
+              <Check aria-hidden className={`size-4 shrink-0 text-accent ${notify === 'on' ? '' : 'invisible'}`} />
+            </button>
+          )}
         </div>
       )}
     </div>

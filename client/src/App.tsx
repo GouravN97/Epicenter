@@ -1,11 +1,14 @@
 import { useEffect } from 'react';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './routes';
+import { setNotificationNavigator } from './lib/desktopNotify';
 import { connectSocket, disconnectSocket } from './lib/socket';
 import { initDataLayer } from './data/live';
 import { useAuth } from './state/authStore';
 
 initDataLayer();
+// Clicking a desktop notification opens its incident room.
+setNotificationNavigator((to) => void router.navigate(to));
 
 export function App() {
   const status = useAuth((s) => s.status);
