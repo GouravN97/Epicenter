@@ -46,6 +46,7 @@ function route(method: string, path: string, body: unknown, query: Query, token:
     if (path === '/alerts') return be.alerts(user, { state: str(query.state), limit: num(query.limit), before: num(query.before) });
     if (path === '/incidents') return be.incidentList(user);
     if (seg[0] === 'incidents' && seg[1] && seg.length === 2) return be.incidentDetail(user, seg[1]);
+    if (seg[0] === 'incidents' && seg[1] && seg[2] === 'insights') return be.incidentInsights(user, seg[1]);
     if (path === '/meta/stats') return be.frame?.stats ?? null;
     if (path === '/chaos/scenarios') return be.chaosScenarios(user);
     if (path === '/chaos/runs') return be.chaosRuns(user);

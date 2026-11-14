@@ -14,6 +14,7 @@ import {
   HEARTBEAT_TIMEOUT_MS,
   HISTORY_MAX_POINTS,
   INCIDENT_JOIN_WINDOW_MS,
+  INSIGHTS_NOTES_MAX,
   INCIDENT_RESOLVE_QUIET_MS,
   METRICS,
   METRIC_UNITS,
@@ -25,6 +26,8 @@ import {
   SERVICE_BY_ID,
   TEAMS,
   ZSCORE_STREAK,
+  alertKinds,
+  buildInsights,
   isServiceId,
   neighbours,
   parseRoom,
@@ -35,6 +38,7 @@ import {
   type ColumnarSeries,
   type IncidentDTO,
   type IncidentDetailDTO,
+  type IncidentInsightsDTO,
   type ChaosActiveRun,
   type ChaosScenarioDef,
   type ChaosScenarioId,
@@ -643,6 +647,23 @@ export class MockBackend {
       timeline: inc.timeline.map((e) => ({ ...e })),
       chaos: this.scorecard(inc),
     };
+  }
+
+  /** Same rules as the server (shared/insights.ts), over the incidents and alerts held in memory. */
+  incidentInsights(user: UserDTO, id: string): IncidentInsightsDTO {
+    const detail = this.incidentDetail(user, id);
+    const teams = teamsOf(user);
+    const candidates = this.incidents
+      .filter((i) => i.dto.id !== id && i.dto.state === 'resolved' && this.incidentTouches(i, teams))
+      .map((i) => ({
+        incident: this.cloneIncident(i),
+        kinds: alertKinds(this.alertLog.filter((a) => i.alertIds.has(a.id))),
+        notes: i.timeline
+          .filter((e) => e.kind === 'note')
+          .slice(-INSIGHTS_NOTES_MAX)
+          .map((e) => ({ text: e.text, userName: e.user?.name ?? '' })),
+      }));
+    return buildInsights(detail, candidates, this.now());
   }
 
   /**

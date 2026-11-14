@@ -23,6 +23,7 @@ import {
 } from '@epicenter/shared';
 import { EmptyState } from '../components/EmptyState';
 import { FleetHeatmap } from '../components/FleetHeatmap';
+import { IncidentInsights } from '../components/IncidentInsights';
 import { LiveChart } from '../components/LiveChart';
 import { Panel } from '../components/Panel';
 import { ReplayChart } from '../components/ReplayChart';
@@ -536,6 +537,8 @@ export function IncidentRoom() {
           </Panel>
         </div>
       </div>
+
+      <IncidentInsights incidentId={id} refreshKey={`${incident.state}|${incident.epicenter}|${incident.affected.join()}|${timeline.length}`} />
 
       <div className="mt-4 grid gap-4 xl:grid-cols-2">
         <Panel title={`${epi?.name ?? 'Epicenter'} · ${mv.title}`} actions={<span className="text-xs text-muted">{mv.unit}</span>}>
