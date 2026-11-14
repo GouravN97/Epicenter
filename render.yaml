@@ -1,0 +1,32 @@
+# Render blueprint for the Epicenter API (task A12). New → Blueprint → this repository.
+# The web app is hosted on Vercel (client/vercel.json); Socket.IO needs this long-running process.
+# Values marked `sync: false` are entered in the Render dashboard and never committed.
+services:
+  - type: web
+    name: epicenter-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run start -w @epicenter/server
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      # Runs the 48-node simulator inside the API process, so the hosted app has live data.
+      - key: EMBEDDED_SIM
+        value: "true"
+      # MongoDB Atlas connection string, ending in /epicenter.
+      - key: MONGODB_URI
+        sync: false
+      # openssl rand -hex 32
+      - key: JWT_SECRET
+        sync: false
+      # Must equal the SIM_KEY used when seeding the database, or the simulator's agents are refused.
+      - key: SIM_KEY
+        sync: false
+      # The Vercel URL, plus http://localhost:5173 if you run the client locally against this API.
+      - key: CLIENT_ORIGIN
+        sync: false
