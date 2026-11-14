@@ -7,13 +7,25 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 dotenv.config({ path: path.join(root, '.env'), quiet: true });
 
 const str = (name: string, fallback = ''): string => process.env[name]?.trim() || fallback;
+
+/**
+ * Browser origins allowed by CORS (REST and Socket.IO), from a comma-separated list such as
+ * "https://epicenter.vercel.app,http://localhost:5173". Trailing slashes are dropped: browsers send none.
+ */
+export function parseOrigins(raw: string, fallback = 'http://localhost:5173'): string[] {
+  const list = raw
+    .split(',')
+    .map((s) => s.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+  return list.length ? [...new Set(list)] : [fallback];
+}
 const bool = (name: string): boolean => /^(1|true|yes)$/i.test(str(name));
 
 export const config = {
   port: Number(str('PORT', '4000')),
   mongodbUri: str('MONGODB_URI'),
   jwtSecret: str('JWT_SECRET'),
-  clientOrigin: str('CLIENT_ORIGIN', 'http://localhost:5173'),
+  clientOrigins: parseOrigins(str('CLIENT_ORIGIN')),
   simKey: str('SIM_KEY'),
   embeddedSim: bool('EMBEDDED_SIM'),
   seedPasswords: {

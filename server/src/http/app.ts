@@ -40,7 +40,7 @@ export function createApp({ pipeline, detector, chaos, incidents, onNote, shedde
   if (config.isProd) app.set('trust proxy', 1);
 
   app.use(helmet());
-  app.use(cors({ origin: config.clientOrigin, credentials: false, maxAge: 600 }));
+  app.use(cors({ origin: config.clientOrigins, credentials: false, maxAge: 600 }));
 
   const api = express.Router();
   // /ingest checks the agent key first, then parses up to 256 kB. Everything else is small JSON.

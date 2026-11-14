@@ -18,6 +18,8 @@ import { IncidentStore, closeStaleIncidents } from './pipeline/incidentStore';
 import { IncidentService } from './incidents/incidentService';
 import { LoadShedder, startLoadShedSampler } from './pipeline/loadShed';
 import { TokenBuckets } from './pipeline/tokenBucket';
+import type { Simulator } from '@epicenter/simulator';
+
 async function main(): Promise<void> {
   requireEnv('MONGODB_URI', 'JWT_SECRET');
   await connectDb();
@@ -115,10 +117,14 @@ async function main(): Promise<void> {
     });
   };
 
-  server.on(
-    'request',
-    createApp({ pipeline, detector, chaos, incidents, shedder, buckets, stats, onNote: (id, e) => rt.emitNote(id, e) }),
-  );
+  const app = createApp({ pipeline, detector, chaos, incidents, shedder, buckets, stats, onNote: (id, e) => rt.emitNote(id, e) });
+  // Socket.IO attached its own request listener first and answers /socket.io/ itself. Express must not answer
+  // those too: a long-polling request would get Express's 404 and then Socket.IO's reply, and the second write
+  // throws ERR_HTTP_HEADERS_SENT and takes the process down.
+  server.on('request', (req, res) => {
+    if (req.url?.startsWith('/socket.io/')) return;
+    app(req, res);
+  });
   rt.broadcaster.alertStatus = (id) => detector.nodeStatus(id);
   if (process.env.DEBUG_PIPELINE) {
     detector.on({
@@ -129,12 +135,29 @@ async function main(): Promise<void> {
   rt.broadcaster.stats = stats;
   rt.broadcaster.start();
 
+  // Hosted (task A12): the simulator runs inside this process and sends to this server over loopback, through
+  // the same ingest API, agent keys and /control namespace as the standalone `npm run sim`.
+  let sim: Simulator | null = null;
   server.listen(config.port, () => {
     console.log(`[server] listening on http://localhost:${config.port}`);
+    if (!config.embeddedSim) return;
+    requireEnv('SIM_KEY');
+    void import('@epicenter/simulator')
+      .then(({ startSimulator }) => {
+        sim = startSimulator({
+          url: `http://127.0.0.1:${config.port}`,
+          key: config.simKey,
+          statusEveryMs: 60_000,
+          log: (line) => console.log(line),
+        });
+        console.log(`[server] embedded simulator started (${sim.agents.length} agents)`);
+      })
+      .catch((err) => console.error('[server] embedded simulator failed to start:', err instanceof Error ? err.message : err));
   });
 
   const shutdown = (sig: string) => {
     console.log(`[server] ${sig} received, shutting down`);
+    sim?.stop();
     pipeline.stop();
     stopNodeSync();
     stopShedSampler();

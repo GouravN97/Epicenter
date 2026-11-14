@@ -54,7 +54,7 @@ const isFiniteNum = (x: unknown): x is number => typeof x === 'number' && Number
 
 export function createRealtime(server: http.Server, pipeline: Pipeline, stats?: () => PipelineStats): Realtime {
   const io = new Server(server, {
-    cors: { origin: config.clientOrigin },
+    cors: { origin: config.clientOrigins },
     serveClient: false,
     maxHttpBufferSize: 16 * 1024, // clients only send small control messages
   });
