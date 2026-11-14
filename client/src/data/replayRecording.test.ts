@@ -87,4 +87,9 @@ describe('replay recording', () => {
     expect(replayWindow({ startedAt: 100_000, endedAt: 2_000_000 }, 3_000_000, REPLAY_MAX_RANGE_MS)).toEqual({ from: 40_000, to: 640_000 });
     expect(replayWindow({ startedAt: 100_000, endedAt: 200_000 }, 3_000_000, REPLAY_MAX_RANGE_MS)).toEqual({ from: 40_000, to: 230_000 });
   });
+
+  it('asks for whole milliseconds even when the synchronized clock is fractional', () => {
+    expect(replayWindow({ startedAt: 100_000, endedAt: null }, 130_000.42, REPLAY_MAX_RANGE_MS)).toEqual({ from: 40_000, to: 130_000 });
+    expect(replayWindow({ startedAt: 100_000.7, endedAt: 105_000.3 }, 110_000.9, REPLAY_MAX_RANGE_MS)).toEqual({ from: 40_000, to: 110_000 });
+  });
 });
