@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@epicenter/shared": "*",
+    "socket.io-client": "^4.8.4",
     "tsx": "^4.23.15"
   }
 }

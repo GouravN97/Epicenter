@@ -8,8 +8,32 @@ import { errorHandler, notFound } from './errors';
 import { authRouter } from './routes/auth';
 import { ingestRouter } from './routes/ingest';
 import { topologyRouter } from './routes/topology';
+import { historyRouter } from './routes/history';
+import { alertsRouter } from './routes/alerts';
+import type { Detector } from '../pipeline/detector';
+import type { ChaosService } from '../chaos/chaosService';
+import { chaosRouter } from './routes/chaos';
+import type { IncidentService } from '../incidents/incidentService';
+import { incidentsRouter } from './routes/incidents';
+import type { PipelineStats, TimelineEntry } from '@epicenter/shared';
+import type { LoadShedder } from '../pipeline/loadShed';
+import type { TokenBuckets } from '../pipeline/tokenBucket';
+import { auth } from './middleware/auth';
 
-export function createApp(pipeline: PipelineCore): express.Express {
+export interface AppDeps {
+  pipeline: PipelineCore;
+  detector: Detector;
+  chaos: ChaosService;
+  incidents: IncidentService;
+  /** Broadcasts a new timeline note to the incident room. */
+  onNote: (incidentId: string, entry: TimelineEntry) => void;
+  shedder: LoadShedder;
+  buckets: TokenBuckets;
+  /** Latest pipeline stats snapshot (GET /meta/stats). */
+  stats: () => PipelineStats;
+}
+
+export function createApp({ pipeline, detector, chaos, incidents, onNote, shedder, buckets, stats }: AppDeps): express.Express {
   const app = express();
   app.disable('x-powered-by');
   // Behind Render's proxy in production: needed so the login rate limit keys on the client IP.
@@ -20,7 +44,7 @@ export function createApp(pipeline: PipelineCore): express.Express {
 
   const api = express.Router();
   // /ingest checks the agent key first, then parses up to 256 kB. Everything else is small JSON.
-  api.use('/ingest', ingestRouter(pipeline));
+  api.use('/ingest', ingestRouter(pipeline, shedder, buckets));
   api.use(express.json({ limit: '32kb' }));
 
   api.get('/health', (_req, res) => {
@@ -28,6 +52,13 @@ export function createApp(pipeline: PipelineCore): express.Express {
   });
   api.use('/auth', authRouter);
   api.use('/topology', topologyRouter(pipeline.registry));
+  api.use('/alerts', alertsRouter(detector));
+  api.use('/chaos', chaosRouter(chaos));
+  api.use('/incidents', incidentsRouter(incidents, onNote));
+  api.get('/meta/stats', auth, (_req, res) => {
+    res.json(stats());
+  });
+  api.use(historyRouter(pipeline.registry));
 
   app.use('/api/v1', api);
   app.use(notFound);

@@ -4,9 +4,24 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { REGIONS, SIM_DEFAULT_HZ, agentIdForRegion, buildFleet, type IngestBatch } from '@epicenter/shared';
+import { io, type Socket } from 'socket.io-client';
+import {
+  CONTROL,
+  NS_CONTROL,
+  REGIONS,
+  SIM_DEFAULT_HZ,
+  agentIdForRegion,
+  buildFleet,
+  type ControlC2S,
+  type ControlS2C,
+  type IngestBatch,
+} from '@epicenter/shared';
 import { Agent, httpTransport, type Transport } from './agent';
+import { ChaosController, stormTransport } from './chaos';
+import { startFlood } from './flood';
 import { World, serviceSummary, type Sample } from './world';
+
+type ControlSocket = Socket<ControlS2C, ControlC2S>;
 
 export interface SimulatorOptions {
   url: string;
@@ -20,11 +35,16 @@ export interface SimulatorOptions {
   statusEveryMs?: number;
   seed?: number;
   log?: (line: string) => void;
+  /** Connect to /control for chaos commands (default: on unless dryRun). */
+  control?: boolean;
+  /** Cap on traffic-surge's tick-rate multiplier (plan §15: lower it on a small host). Default 5. */
+  maxHzMul?: number;
 }
 
 export interface Simulator {
   world: World;
   agents: Agent[];
+  chaos: ChaosController;
   stop(): void;
 }
 
@@ -35,9 +55,9 @@ export function startSimulator(opts: SimulatorOptions): Simulator {
 
   const fleet = buildFleet();
   const world = new World({ seed: opts.seed, fleet });
-  const send: Transport = opts.dryRun
-    ? async (_b: IngestBatch) => ({ status: 202 })
-    : httpTransport(opts.url, opts.key);
+  const base: Transport = opts.dryRun ? async (_b: IngestBatch) => ({ status: 202 }) : httpTransport(opts.url, opts.key);
+  // `chaos` is created below; the storm wrapper only asks it whether a duplicate-storm is active.
+  const send: Transport = stormTransport(base, () => chaos.isStorm());
 
   const agents = REGIONS.map(
     (r) =>
@@ -55,13 +75,49 @@ export function startSimulator(opts: SimulatorOptions): Simulator {
 
   let last = Date.now();
   let lastSamples: Sample[] = [];
-  const tick = setInterval(() => {
+  let hzMul = 1;
+  const step = () => {
     const now = Date.now();
     lastSamples = world.step(now, (now - last) / 1000);
     last = now;
     for (const s of lastSamples) agentFor.get(s.nodeId)!.record(s.nodeId, now, s.m);
-  }, 1000 / hz);
+  };
+  let tick = setInterval(step, 1000 / hz);
   for (const a of agents) a.start();
+
+  let flood: ReturnType<typeof startFlood> | null = null;
+  const chaos = new ChaosController(
+    {
+      world,
+      restartNode: (id) => agentFor.get(id)?.restartNode(id),
+      setHzMultiplier: (mul) => {
+        if (mul === hzMul) return;
+        hzMul = mul;
+        clearInterval(tick);
+        tick = setInterval(step, 1000 / (hz * hzMul));
+        log(`[sim] sampling at ${hz * hzMul} Hz`);
+      },
+      startFlood: () => {
+        if (!opts.dryRun) flood ??= startFlood(opts.url, opts.key);
+      },
+      stopFlood: () => {
+        if (flood) log(`[sim] flood sent ${flood.stats.sent} requests ${JSON.stringify(flood.stats.status)}`);
+        flood?.stop();
+        flood = null;
+      },
+      log,
+    },
+    opts.maxHzMul,
+  );
+
+  let control: ControlSocket | null = null;
+  if (opts.control ?? !opts.dryRun) {
+    control = io(`${opts.url.replace(/\/+$/, '')}${NS_CONTROL}`, { transports: ['websocket'], auth: { key: opts.key } });
+    control.on('connect', () => log('[sim] connected to /control (chaos commands enabled)'));
+    control.on('connect_error', (e) => log(`[sim] /control: ${e.message}`));
+    control.on(CONTROL.chaosStart, (cmd) => chaos.start(cmd));
+    control.on(CONTROL.chaosStop, (req) => chaos.stop(req?.runId));
+  }
 
   log(`[sim] ${fleet.length} nodes, ${agents.length} agents, ${hz} Hz → ${opts.dryRun ? 'dry run (no HTTP)' : opts.url}`);
 
@@ -79,9 +135,11 @@ export function startSimulator(opts: SimulatorOptions): Simulator {
       const dropped = agents.reduce((a, x) => a + x.stats.dropped, 0);
       const err = agents.map((a) => a.stats.lastError).find(Boolean);
       const secs = every / 1000;
+      const active = chaos.list().map((r) => r.scenario);
       log(
         `[sim] ${((sent - prevSent) / secs).toFixed(1)} ev/s · ${((batches - prevBatches) / secs).toFixed(1)} batch/s · ` +
-          `status ${JSON.stringify(status)} · buffered ${buffered} · dropped ${dropped}${err ? ` · last error: ${err}` : ''}`,
+          `status ${JSON.stringify(status)} · buffered ${buffered} · dropped ${dropped}${err ? ` · last error: ${err}` : ''}` +
+          (active.length ? ` · chaos: ${active.join(', ')}` : ''),
       );
       prevSent = sent;
       prevBatches = batches;
@@ -99,10 +157,13 @@ export function startSimulator(opts: SimulatorOptions): Simulator {
   return {
     world,
     agents,
+    chaos,
     stop() {
       clearInterval(tick);
       if (statusTimer) clearInterval(statusTimer);
       for (const a of agents) a.stop();
+      flood?.stop();
+      control?.close();
     },
   };
 }

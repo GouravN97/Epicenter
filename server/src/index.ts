@@ -1,14 +1,23 @@
 import http from 'node:http';
 import { config, requireEnv } from './config';
 import { connectDb, disconnectDb, ensureIndexes } from './db/connect';
-import { NodeModel } from './db/models';
+import { Metric1mModel, Metric1sModel, NodeModel } from './db/models';
+import { Writer } from './pipeline/writer';
 import { startNodeSync } from './db/nodeSync';
 import { createApp } from './http/app';
 import { createPipeline } from './pipeline';
 import { snapshotStats } from './pipeline/pipelineStats';
 import { createRealtime } from './realtime/io';
-
-// Writer (A6) and detector (A7) are wired in later tasks.
+import { Types } from 'mongoose';
+import { Detector } from './pipeline/detector';
+import { AlertStore, resolveStaleAlerts } from './pipeline/alertStore';
+import { ChaosService, closeStaleChaosRuns } from './chaos/chaosService';
+import { createControl } from './realtime/control';
+import { Correlator } from './pipeline/correlator';
+import { IncidentStore, closeStaleIncidents } from './pipeline/incidentStore';
+import { IncidentService } from './incidents/incidentService';
+import { LoadShedder, startLoadShedSampler } from './pipeline/loadShed';
+import { TokenBuckets } from './pipeline/tokenBucket';
 async function main(): Promise<void> {
   requireEnv('MONGODB_URI', 'JWT_SECRET');
   await connectDb();
@@ -17,6 +26,9 @@ async function main(): Promise<void> {
   console.log(`[server] connected to MongoDB (${known.length} nodes registered)`);
 
   const pipeline = createPipeline(known.map((n) => n.nodeId));
+  const writer = new Writer(Metric1sModel.collection, Metric1mModel.collection);
+  pipeline.aggregator.on({ point: (p) => writer.add(p), minute: (p) => writer.addMinute(p) });
+  writer.start();
   pipeline.start();
   const stopNodeSync = startNodeSync(pipeline.registry, pipeline.state);
 
@@ -26,6 +38,10 @@ async function main(): Promise<void> {
     pipeline.aggregator.on({ point: (_p, c) => (c ? corrections++ : points++) });
     setInterval(() => {
       const c = pipeline.counters.prev;
+      const w = writer.stats;
+      console.log(
+        `[writer] batch ${w.batch} in ${w.ms}ms · buffer ${w.buffer} · superseded ${w.superseded} · dropped ${w.dropped} · errors ${w.errors}`,
+      );
       console.log(
         `[pipeline] accepted ${c.accepted}/s dup ${c.duplicate} ooo ${c.outOfOrder} late ${c.lateCorrected} ` +
           `rejected ${c.rejected} stale ${c.stale} · points ${points}/5s corrections ${corrections} · open ${pipeline.aggregator.second.openCount()}`,
@@ -34,9 +50,56 @@ async function main(): Promise<void> {
     }, 5_000).unref();
   }
 
-  const server = http.createServer(createApp(pipeline));
+  // Detection (§8.6): every finalized point (corrections do not re-run it) plus a 1 s heartbeat sweep.
+  const detector = new Detector(
+    (id) => pipeline.registry.get(id),
+    () => new Types.ObjectId().toHexString(),
+  );
+  const closed = await resolveStaleAlerts();
+  if (closed) console.log(`[server] closed ${closed} alerts left open by a previous run`);
+  pipeline.aggregator.on({ point: (p, correction) => !correction && detector.onPoint(p) });
+  const heartbeat = setInterval(() => detector.checkHeartbeats(Date.now(), pipeline.state.nodes.values()), 1000);
+
+  // The HTTP server comes first: Socket.IO attaches to it, chaos needs /control, and the app needs chaos.
+  const server = http.createServer();
   const rt = createRealtime(server, pipeline);
-  rt.broadcaster.stats = () => {
+  const control = createControl(rt.io, config.simKey);
+  const chaos = new ChaosService(control, pipeline.registry);
+  const staleRuns = await closeStaleChaosRuns();
+  if (staleRuns) console.log(`[server] closed ${staleRuns} chaos runs left open by a previous run`);
+  chaos.onUpdate((active) => rt.emitChaos(active));
+  rt.setChaosSnapshot(() => chaos.snapshot());
+
+  // Correlation (§8.7). Subscribed to the detector before the alert store, so an alert already carries its
+  // incidentId when alert:new goes out.
+  const correlator = new Correlator(() => new Types.ObjectId().toHexString(), () => chaos.recentRuns());
+  detector.on({
+    fire: (a) => correlator.onAlertFired(a, Date.now()),
+    resolve: (a) => correlator.onAlertResolved(a, Date.now()),
+  });
+  const alerts = new AlertStore((ev, a) => rt.emitAlert(ev, a));
+  alerts.attach(detector);
+  const staleIncidents = await closeStaleIncidents();
+  if (staleIncidents) console.log(`[server] closed ${staleIncidents} incidents left open by a previous run`);
+  const incidentStore = new IncidentStore({ incident: (ev, dto, teams) => rt.emitIncident(ev, dto, teams) }, alerts, (id) => detector.getActive(id));
+  incidentStore.attach(correlator);
+  const incidents = new IncidentService(correlator, detector, incidentStore);
+  rt.setIncidentTeams((id) => incidents.teamsOf(id));
+  const correlatorTick = setInterval(() => correlator.tick(Date.now()), 1000);
+  if (process.env.DEBUG_PIPELINE) {
+    correlator.on({
+      open: (i) => console.log(`[incident] OPEN ${i.id}: ${i.title}`),
+      update: (i) => console.log(`[incident] ${i.state === 'resolved' ? 'RESOLVED' : 'upd'} ${i.id}: ${i.title} (conf ${i.confidence})${i.mergedInto ? ` merged → ${i.mergedInto}` : ''}`),
+    });
+  }
+
+  // Backpressure (§8.4): event-loop / writer-buffer shedding and per-agent-key token buckets on ingest.
+  const shedder = new LoadShedder();
+  const stopShedSampler = startLoadShedSampler(shedder, () => writer.fill(), (m) => console.log(m));
+  const buckets = new TokenBuckets();
+
+  // Pipeline stats (§8.8): meta:pt every second and GET /meta/stats.
+  const stats = () => {
     const d = rt.dashStats();
     return snapshotStats({
       counters: pipeline.counters.prev,
@@ -44,9 +107,26 @@ async function main(): Promise<void> {
       socketsDash: d.sockets,
       rooms: d.rooms,
       emitsPerSec: rt.broadcaster.emitsPerSec,
+      bytesOutPerSec: rt.broadcaster.bytesOutPerSec,
       clientE2eP95: d.clientE2eP95,
+      writer: writer.stats,
+      loopLagP99: shedder.loopLagP99,
+      shedding: shedder.shouldShed(Date.now()),
     });
   };
+
+  server.on(
+    'request',
+    createApp({ pipeline, detector, chaos, incidents, shedder, buckets, stats, onNote: (id, e) => rt.emitNote(id, e) }),
+  );
+  rt.broadcaster.alertStatus = (id) => detector.nodeStatus(id);
+  if (process.env.DEBUG_PIPELINE) {
+    detector.on({
+      fire: (a) => console.log(`[alert] FIRE ${a.severity} ${a.rule} ${a.nodeId}: ${a.message}`),
+      resolve: (a) => console.log(`[alert] RESOLVED ${a.rule} ${a.nodeId} ${a.metric}`),
+    });
+  }
+  rt.broadcaster.stats = stats;
   rt.broadcaster.start();
 
   server.listen(config.port, () => {
@@ -57,9 +137,16 @@ async function main(): Promise<void> {
     console.log(`[server] ${sig} received, shutting down`);
     pipeline.stop();
     stopNodeSync();
+    stopShedSampler();
+    clearInterval(heartbeat);
+    clearInterval(correlatorTick);
+    void chaos.stopAll();
     void rt.close();
-    server.close(() => void disconnectDb().finally(() => process.exit(0)));
-    setTimeout(() => process.exit(0), 2000).unref();
+    // Write what is buffered before the database connection goes away.
+    server.close(() =>
+      void Promise.all([writer.stop(), alerts.drain(), incidentStore.drain()]).finally(() => disconnectDb().finally(() => process.exit(0))),
+    );
+    setTimeout(() => process.exit(0), 4000).unref();
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
