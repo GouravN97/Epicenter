@@ -80,6 +80,13 @@ On top of the standard live dashboard, Epicenter adds four things:
 - Replay with a time scrubber, alert markers, play, pause, speed and Go Live. The topology map, the node
   heatmap and the epicenter's chart all follow the scrubber.
 - Notifications when an incident opens (once its epicenter has settled) and when it resolves.
+- Desktop notifications for new incidents (turn them on in the **Display** menu). Clicking one brings the
+  tab forward and opens that incident's room with the epicenter marked. The app must be open in a tab, and
+  browsers only allow this on `localhost` or HTTPS.
+- Automated analysis in the incident room, from `GET /incidents/:id/insights`: why this service was named
+  the epicenter, what to check next, similar past incidents with how long they lasted and what responders
+  noted, and a postmortem draft to copy or download as Markdown. It is rule-based (dependency graph, alert
+  kinds, overlap scoring): no AI model is involved.
 
 **Platform**
 - Validated, rate-limited batch ingestion; sliding-window deduplication; 1-second aggregation with late-event
