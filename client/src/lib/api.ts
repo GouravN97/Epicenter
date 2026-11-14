@@ -1,5 +1,5 @@
 // REST client for /api/v1 (plan §6). Errors arrive as `{ error: { code, message } }`.
-import type { ApiError } from './contract';
+import type { ApiError } from '@epicenter/shared';
 import { API_URL, USE_MOCK } from './env';
 
 export class HttpError extends Error {
@@ -36,7 +36,7 @@ async function request<T>(method: string, path: string, opts: { body?: unknown; 
   try {
     if (USE_MOCK) {
       const { mockRequest } = await import('../mocks/mockApi');
-      return (await mockRequest(method, path, opts.body, token)) as T;
+      return (await mockRequest(method, path, opts.body, opts.query, token)) as T;
     }
 
     let res: Response;

@@ -6,6 +6,16 @@
     <meta name="theme-color" content="#0b0e13" />
     <meta name="color-scheme" content="dark" />
     <title>Epicenter</title>
+    <script>
+      // Apply the saved display mode before the first paint, so the page never flashes the other one.
+      // Same key and values as src/state/displayStore.ts.
+      try {
+        if (localStorage.getItem('epicenter.display') === 'glass') {
+          document.documentElement.dataset.display = 'glass';
+          document.querySelector('meta[name="color-scheme"]').content = 'light dark';
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

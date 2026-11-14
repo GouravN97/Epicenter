@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { USE_MOCK } from '../lib/env';
+import { usePageTitle } from '../lib/usePageTitle';
 import { useAuth } from '../state/authStore';
 
 // Seed accounts from plan §6.3. Quick-fill sets the email only; passwords live in .env, never in the repo.
@@ -11,6 +12,7 @@ const SEED = [
 ];
 
 export function Login() {
+  usePageTitle('Sign in');
   const status = useAuth((s) => s.status);
   const login = useAuth((s) => s.login);
   const navigate = useNavigate();
@@ -37,23 +39,23 @@ export function Login() {
     }
   }
 
-  const field =
-    'w-full rounded-md border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-faint focus:border-accent focus:outline-none';
+  const field = 'field w-full px-3 py-2';
 
   return (
-    <div className="flex min-h-full items-center justify-center px-4 py-10">
-      <div className="w-full max-w-sm">
+    <div className="flex min-h-full items-center justify-center overflow-hidden px-4 py-10">
+      <div className="relative isolate w-full max-w-sm">
+        <div aria-hidden className="ambient ambient-centered" />
         <div className="mb-6 text-center">
           <svg viewBox="0 0 24 24" className="mx-auto size-10 text-accent" fill="none" stroke="currentColor" aria-hidden>
             <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
             <circle cx="12" cy="12" r="6" strokeWidth="1.5" opacity="0.6" />
             <circle cx="12" cy="12" r="10" strokeWidth="1.5" opacity="0.25" />
           </svg>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight">Epicenter</h1>
+          <h1 className="page-title mt-3 text-2xl">Epicenter</h1>
           <p className="mt-1 text-sm text-muted">Find where the fire started.</p>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4 rounded-lg border border-line bg-surface p-5">
+        <form onSubmit={onSubmit} className="card space-y-4 p-5">
           <div>
             <label htmlFor="email" className="mb-1.5 block text-sm text-muted">
               Email
@@ -93,7 +95,7 @@ export function Login() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-bg transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-primary w-full py-2 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
@@ -111,10 +113,10 @@ export function Login() {
                   if (USE_MOCK) setPassword('mock');
                   setError(null);
                 }}
-                className="rounded-md border border-line bg-surface px-2 py-2 text-center transition-colors hover:border-accent hover:bg-raised"
+                className="card rounded-md px-2 py-2 text-center transition-colors hover:border-accent hover:bg-raised"
               >
                 <span className="block text-sm text-fg">{u.label}</span>
-                <span className="block text-[11px] text-muted">{u.hint}</span>
+                <span className="block text-mini text-muted">{u.hint}</span>
               </button>
             ))}
           </div>

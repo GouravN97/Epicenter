@@ -8,14 +8,19 @@
     "dev:mock": "vite --mode mock",
     "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@epicenter/shared": "*",
+    "@tanstack/react-virtual": "^3.14.26",
+    "@xyflow/react": "^12.12.1",
     "lucide-react": "^1.72.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5",
     "socket.io-client": "^4.8.4",
+    "uplot": "^1.6.32",
     "zustand": "^5.1.0"
   },
   "devDependencies": {
@@ -25,6 +30,7 @@
     "@vitejs/plugin-react": "^6.3.0",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
-    "vite": "^8.3.8"
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
   }
 }
