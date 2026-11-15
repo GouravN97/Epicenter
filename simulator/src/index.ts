@@ -21,6 +21,9 @@ import { ChaosController, stormTransport } from './chaos';
 import { startFlood } from './flood';
 import { World, serviceSummary, type Sample } from './world';
 
+// The stress tool (tools/stress) drives the same agent code, so its batches and back-off match the simulator's.
+export { Agent, httpTransport, type Transport } from './agent';
+
 type ControlSocket = Socket<ControlS2C, ControlC2S>;
 
 export interface SimulatorOptions {
