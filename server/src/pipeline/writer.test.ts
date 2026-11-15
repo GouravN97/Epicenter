@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Point } from './aggregator';
-import { PointBuffer, toDoc, upsertOp } from './writer';
+import { PointBuffer, Writer, toDoc, upsertOp } from './writer';
 
 const pt = (nodeId: string, ts: number, rev = 0, cpu = 10): Point => ({
   nodeId, ts, n: 2, rev, cpu, mem: 20.123, disk: 30, netIn: 1, netOut: 2, lat: 3, latMax: 4, err: 0, rps: 5,
@@ -56,5 +56,30 @@ describe('upsert op', () => {
     const d = toDoc({ ...pt('a', 60_000), cpuMax: 90.555, memMax: 50, errMax: 1 });
     expect(d).toMatchObject({ ts: new Date(60_000), cpuMax: 90.56, memMax: 50, errMax: 1 });
     expect('cpuMax' in toDoc(pt('a', 0))).toBe(false);
+  });
+});
+
+describe('Writer', () => {
+  /** A collection whose bulkWrite takes `ms` and records each batch size. */
+  const slowCollection = (ms: number, sizes: number[]) =>
+    ({
+      bulkWrite: async (ops: unknown[]) => {
+        sizes.push(ops.length);
+        await new Promise((r) => setTimeout(r, ms));
+        return {};
+      },
+    }) as unknown as ConstructorParameters<typeof Writer>[0];
+
+  it('drains a backlog flush after flush without waiting for new points or the timer', async () => {
+    const sizes: number[] = [];
+    const w = new Writer(slowCollection(5, sizes), slowCollection(0, []));
+    w.start();
+    // One finalize burst: 3,500 nodes' points arrive at once (the first 1,000 start a flush immediately).
+    for (let i = 0; i < 3500; i++) w.add(pt(`n${i}`, 1000));
+    await new Promise((r) => setTimeout(r, 100)); // well under the 1 s timer
+    // Before the fix only the first batch was written in this time; the rest waited for the next burst.
+    expect(sizes).toEqual([1000, 1000, 1000]);
+    expect(w.stats.buffer).toBe(500); // under one batch: left for the regular 1 s flush
+    await w.stop();
   });
 });

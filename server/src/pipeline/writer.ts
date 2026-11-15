@@ -162,6 +162,11 @@ export class Writer {
       this.inFlight = false;
       this.refreshGauges();
     }
+    // A backlog is drained straight away. Without this the next flush waited for the next point to arrive
+    // (points come in bursts every AGG_FINALIZE_INTERVAL_MS), which capped the writer at about 1,000 points
+    // per 250 ms, i.e. ~4,000 nodes, far below what MongoDB takes (docs/BENCHMARKS.md).
+    // setImmediate lets ingest and broadcasts run between flushes.
+    if (this.timer && this.sec.size >= WRITER_FLUSH_POINTS) setImmediate(() => void this.flush());
   }
 
   private async write(col: Collection, points: Point[]): Promise<void> {
