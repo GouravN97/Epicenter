@@ -99,6 +99,10 @@ Two things to know:
 - Mock mode breaks something by itself every four minutes so the dashboard is never boring. If an alert or
   incident appears that you did not cause, that is why. It pauses while a fault you started is running.
 
+Prefer not to install anything? The hosted version, with the real server, is at
+<https://epicenter-one.vercel.app>. Ask the team for the demo passwords. The first load can take a minute
+while the free server wakes up.
+
 > **Prefer to be led through it?** The app has this walkthrough built in. The first time an account signs
 > in, a guided tour opens in the corner, points at each part of the screen, and checks off each exercise as
 > you do it. Restart it any time with the **Tour** button in the toolbar. This page is the same material in
@@ -345,6 +349,20 @@ Real incidents are fast and stressful, and most of the learning happens afterwar
 
 The gap between "the metric first went wrong" and "the alert fired" is the **time to detect**. Shortening it,
 without creating false alarms, is one of the main things SREs work on.
+
+### Read the analysis
+
+Scroll down to **Automated analysis**. It answers the questions an on-call engineer asks next:
+
+- **Why this epicenter**: the Database depends on nothing that is alerting, and the other alerting services
+  all call it. A caller may even have alerted *first*; onset order alone does not decide the cause, the
+  dependency graph does.
+- **Suggested checks**: what to look at on a slow database, and that restarting its callers will not help.
+- **Similar past incidents**: earlier incidents with the same epicenter, how long they lasted and what
+  responders wrote. Run the fault twice and the second incident finds the first.
+- **Copy report** gives you a postmortem draft built from the timeline.
+
+It is all fixed rules over the incident's data and the service graph; no AI model is involved.
 
 ---
 

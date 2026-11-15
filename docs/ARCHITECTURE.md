@@ -3,10 +3,6 @@
 This document explains how Epicenter ingests, processes, stores and broadcasts telemetry, and how the browser
 merges history with the live stream. Diagrams are Mermaid and render on GitHub.
 
-> **Status.** Parts marked † are designed and wired into the web app but still being implemented on the
-> server: anomaly detection and alerts, the incident correlator, chaos commands over `/control`, ingest load
-> shedding and the per-agent token bucket. <!-- Remove this note and the † marks once A7–A10 are merged. -->
-
 1. [System overview](#1-system-overview)
 2. [The path of one event](#2-the-path-of-one-event)
 3. [Data model](#3-data-model)
@@ -33,7 +29,7 @@ flowchart LR
     DD --> AGG[Aggregator<br/>1 s and 1 min buckets]
     AGG --> ST[State store<br/>latest per node]
     AGG --> WR[Writer<br/>bulk upsert every 1 s]
-    AGG --> DET[Detector → Correlator †<br/>alerts → incidents]
+    AGG --> DET[Detector → Correlator<br/>alerts → incidents]
     ST --> BC[Broadcaster<br/>1 Hz deltas]
     AGG --> BC
     DET --> BC
@@ -55,7 +51,7 @@ flowchart LR
   BC -- rooms on /dash --> SK
   REST -- columnar JSON --> HIST
   ADMIN[Chaos Lab] -- POST /chaos/start --> REST
-  REST -. /control namespace † .-> AG
+  REST -. /control namespace .-> AG
 ```
 
 **One contract, three consumers.** The `shared` package defines the topology, the zod schemas, the socket
@@ -213,7 +209,7 @@ core promise is "no duplicates", that is the right trade.
 | Namespace | Who | Auth |
 |---|---|---|
 | `/dash` | browsers | JWT in `handshake.auth.token`, verified once per connection |
-| `/control` † | simulators | simulator key; the server pushes chaos commands |
+| `/control` | simulators | simulator key; the server pushes chaos commands |
 
 The default namespace refuses all connections.
 
@@ -336,7 +332,7 @@ It is computed on request and never stored. The query uses the incident indexes 
 - No database access on the ingest path; agent keys and the node registry are cached in memory.
 - One unordered `bulkWrite` of upserts per second, one flush in flight, a bounded buffer that counts drops.
 - Positional payloads, changed-node deltas, serialization only for occupied rooms, congested sockets skipped.
-- Load shedding †: when event-loop lag or the write buffer passes a threshold, ingest answers 429 with
+- Load shedding: when event-loop lag or the write buffer passes a threshold, ingest answers 429 with
   `Retry-After` and agents back off and thin old samples.
 
 **Browser**
@@ -349,9 +345,11 @@ It is computed on request and never stored. The query uses the incident indexes 
 - The alert feed is windowed; only visible rows are in the DOM.
 - Pages load on demand, so the chart and graph libraries are fetched only by the pages that use them.
 
-**Measured** (local machine, simulator at 48 nodes × 2 Hz): end-to-end delay from source timestamp to screen
-about 0.7 s on the real server, of which socket delivery is a few milliseconds; the rest is the aggregation
-grace period. Load-test results at larger scale are in [`BENCHMARKS.md`](BENCHMARKS.md).
+**Measured** (one laptop running everything, [`BENCHMARKS.md`](BENCHMARKS.md)): 10,000 events/s from 2,000
+nodes to 200 dashboards with every event accepted, socket delivery 27 ms at p95 and event-loop lag under
+30 ms. At 50,000 events/s from 10,000 nodes, load shedding engages in short bursts, 76% of the offered load
+is accepted and dashboards keep receiving updates in 33 ms at p95. The ceiling is memory per node: at 20,000
+nodes the 60 s of buckets kept for late events outgrow Node's default 2 GB heap.
 
 ## 8. Security and access control
 
@@ -364,9 +362,9 @@ grace period. Load-test results at larger scale are in [`BENCHMARKS.md`](BENCHMA
   socket subscriptions to another team's rooms are denied; `/topology` lists only the user's nodes; replay
   refuses services outside the user's teams. The client hides what it cannot use, but never relies on that.
 - **Agents.** Each agent has its own key (stored hashed), may only report nodes under its prefix, and is rate
-  limited by a token bucket †.
+  limited by a token bucket.
 - **Input.** Every request body, query and socket payload is validated; bodies are size limited; HTTP headers
-  are hardened with helmet; CORS allows only the web app's origin.
+  are hardened with helmet; CORS allows only the configured web app origins (`CLIENT_ORIGIN`).
 - **Secrets** live only in `.env`, never in the repository; demo passwords are set at seed time.
 
 ## 9. Testing

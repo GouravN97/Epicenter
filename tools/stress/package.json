@@ -9,6 +9,9 @@
   },
   "dependencies": {
     "@epicenter/shared": "*",
+    "@epicenter/simulator": "*",
+    "mongoose": "^9.12.1",
+    "socket.io-client": "^4.8.4",
     "tsx": "^4.23.15"
   }
 }

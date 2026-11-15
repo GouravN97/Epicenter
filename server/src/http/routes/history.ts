@@ -20,6 +20,7 @@ import { Metric1mModel, Metric1sModel } from '../../db/models';
 import { clampRange, emptySeries, resolveRange, toColumnar, type ConcreteRes, type HistoryRow } from '../../history/columnar';
 import type { NodeRegistry } from '../../pipeline/nodeRegistry';
 import { visibleTeams } from '../../realtime/rooms';
+import { percentile } from '../../realtime/snapshots';
 import { HttpError } from '../errors';
 import { auth, currentUser } from '../middleware/auth';
 
@@ -55,8 +56,9 @@ export function historyRouter(registry: NodeRegistry): Router {
     }
     const range = resolveRange(q.from, q.to, q.res);
     const nodeIds = registry.list.filter((n) => n.serviceId === serviceId).map((n) => n.nodeId);
-    // avg cpu/mem/disk/err, sum rps and network, max latency (§6.2), per timestamp.
-    const rows = await modelFor(range.res).aggregate<HistoryRow & { _id: Date }>([
+    // avg cpu/mem/disk/err, sum rps and network per timestamp. Latency is the p95 across the service's nodes,
+    // computed below with the same nearest-rank percentile as the live svc:pt, so history and live line up.
+    const rows = await modelFor(range.res).aggregate<Omit<HistoryRow, 'lat'> & { _id: Date; lats: number[] }>([
       { $match: { nodeId: { $in: nodeIds }, ts: { $gte: new Date(range.from), $lte: new Date(range.to) } } },
       {
         $group: {
@@ -68,7 +70,7 @@ export function historyRouter(registry: NodeRegistry): Router {
           rps: { $sum: '$rps' },
           netIn: { $sum: '$netIn' },
           netOut: { $sum: '$netOut' },
-          lat: { $max: '$lat' },
+          lats: { $push: '$lat' },
           rev: { $max: '$rev' },
         },
       },
@@ -79,7 +81,7 @@ export function historyRouter(registry: NodeRegistry): Router {
     const body: ServiceSeriesResponse = {
       serviceId,
       ...toColumnar(
-        rows.map((x) => ({ ...x, ts: x._id, cpu: r1(x.cpu), mem: r1(x.mem), disk: r1(x.disk), err: r1(x.err), rps: r1(x.rps), netIn: r1(x.netIn), netOut: r1(x.netOut) })),
+        rows.map(({ lats, ...x }) => ({ ...x, ts: x._id, lat: r1(percentile(lats, 0.95)), cpu: r1(x.cpu), mem: r1(x.mem), disk: r1(x.disk), err: r1(x.err), rps: r1(x.rps), netIn: r1(x.netIn), netOut: r1(x.netOut) })),
         range.res,
       ),
     };

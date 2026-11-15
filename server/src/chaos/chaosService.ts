@@ -137,6 +137,13 @@ export class ChaosService {
   }
 
   /** Stops every active run. Returns how many were stopped. */
+  /** Stops one active run. Returns false if it is not running (already ended or unknown). */
+  async stop(runId: string): Promise<boolean> {
+    if (!this.active.has(runId)) return false;
+    await this.end(runId);
+    return true;
+  }
+
   async stopAll(): Promise<number> {
     const ids = [...this.active.keys()];
     await Promise.all(ids.map((id) => this.end(id)));
