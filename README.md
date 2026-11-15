@@ -361,9 +361,11 @@ lockfile.
 | [TypeScript](https://www.typescriptlang.org) | language | Apache-2.0 |
 | [Vitest](https://vitest.dev) | tests | MIT |
 | [concurrently](https://github.com/open-cli-tools/concurrently) | running server and client together | MIT |
+| [DefinitelyTyped](https://github.com/DefinitelyTyped/DefinitelyTyped) (`@types/node`, `@types/react`, `@types/react-dom`, `@types/express`, `@types/cors`, `@types/jsonwebtoken`) | TypeScript type definitions | MIT |
 
-**Services**: [MongoDB Atlas](https://www.mongodb.com/atlas) for the hosted database; hosting providers are
-listed above once deployed.
+**Services**: [Vercel](https://vercel.com) hosts the web app, [Render](https://render.com) the API (with the
+embedded simulator), and [MongoDB Atlas](https://www.mongodb.com/atlas) the database, all on free tiers. No
+external APIs are called at runtime.
 
 **Design resources**: colour palettes for the CPU heat ramp and chart series were checked for colour-blind
 separation and contrast against each surface they are drawn on; status is always paired with an icon and a label.
