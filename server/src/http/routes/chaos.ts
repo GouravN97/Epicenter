@@ -6,6 +6,8 @@ import type { ChaosService } from '../../chaos/chaosService';
 import { auth, currentUser, requireRole } from '../middleware/auth';
 
 const RunsQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(20) });
+/** No runId: stop every active run. */
+const StopBody = z.object({ runId: z.string().regex(/^[a-f0-9]{24}$/i).optional() }).default({});
 
 export function chaosRouter(chaos: ChaosService): Router {
   const r = Router();
@@ -26,8 +28,11 @@ export function chaosRouter(chaos: ChaosService): Router {
     res.status(201).json(await chaos.start(body, currentUser(req).sub));
   });
 
-  r.post('/stop', async (_req, res) => {
-    res.json({ stopped: await chaos.stopAll() });
+  /** Stops one run (`{ runId }`) or all of them (`{}`); answers with the runs still active, like chaos:upd. */
+  r.post('/stop', async (req, res) => {
+    const { runId } = StopBody.parse(req.body ?? {});
+    const stopped = runId ? Number(await chaos.stop(runId)) : await chaos.stopAll();
+    res.json({ active: chaos.snapshot(), stopped });
   });
 
   return r;
